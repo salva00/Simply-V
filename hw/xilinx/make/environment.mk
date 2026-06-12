@@ -119,8 +119,10 @@ XILINX_VIVADO_ENV =                                 \
     GCC_PATH=${GCC_PATH}                            \
     XILINX_SIMLIB_PATH=${XILINX_SIMLIB_PATH}
 
-# Package Vivado command in a single variable
-XILINX_VIVADO = ${XILINX_VIVADO_ENV} ${XILINX_VIVADO_CMD} -mode ${XILINX_VIVADO_MODE}
+# Package Vivado command in a single variable.
+# NOTE: do NOT name this XILINX_VIVADO: that env var (set by Vivado's settings64.sh)
+# would be shadowed and re-exported by Make, crashing xsim's Tcl layer.
+XILINX_VIVADO_RUN = ${XILINX_VIVADO_ENV} ${XILINX_VIVADO_CMD} -mode ${XILINX_VIVADO_MODE}
 XILINX_VIVADO_BATCH = ${XILINX_VIVADO_ENV} ${XILINX_VIVADO_CMD} -mode batch
 
 # PCIe device and address

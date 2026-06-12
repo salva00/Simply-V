@@ -30,7 +30,7 @@ load_binary: load_binary_${SIMPLYV_PROFILE}
 
 # Write the binary to BRAM through jtag2axi
 load_binary_embedded: ${BIN_PATH}
-	${XILINX_VIVADO} \
+	${XILINX_VIVADO_RUN} \
 		-source ${XILINX_SCRIPT_ROOT}/utils/open_hw_manager.tcl \
 		-source ${XILINX_SCRIPTS_LOAD_ROOT}/jtag2axi_load_binary.tcl \
 		-tclargs ${BIN_PATH} ${OFFSET} ${LOAD_BINARY_READBACK}

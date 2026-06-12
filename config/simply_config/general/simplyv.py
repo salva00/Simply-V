@@ -14,6 +14,7 @@
 # through the "simply_config.py" file that launches the correct methods based on the makefile target that
 # launched the whole configuration
 
+import os
 import re
 from buses.nonleafbus import NonLeafBus
 from .error import Conflict_Error, Unsupported_Value_Error
@@ -25,6 +26,7 @@ from templates.ld_template import Ld_Template
 from peripherals.ddr4 import DDR4
 from peripherals.bram import Bram
 from templates.bus_interconnect_template import Bus_Interconnect_Template
+from templates.sim_template import Sim_Defines_Template, Sim_Addrmap_Template
 from pathlib import Path
 from factories.buses_factory import Buses_Factory
 from peripherals.peripheral import Peripheral
@@ -179,6 +181,21 @@ class SimplyV(metaclass=Singleton):
 
 		# return false if the bus wasn't found
 		return False
+
+
+	# Generate the simulation-flow artifacts (dual backend Verilator/xsim):
+	# sim_defines.svh (mirror of the synth verilog defines) and
+	# sim_addrmap_pkg.sv (crossbar routing rules for the Verilator shims)
+	def config_sim(self, defines_path: str, addrmap_path: str) -> None:
+		profile = os.environ.get("SIMPLYV_PROFILE")
+		if profile is None:
+			raise ValueError("SIMPLYV_PROFILE not set: source settings.sh first")
+
+		defines_template = Sim_Defines_Template(self, profile)
+		defines_template.write_to_file(defines_path)
+
+		addrmap_template = Sim_Addrmap_Template(self.buses)
+		addrmap_template.write_to_file(addrmap_path)
 
 
 

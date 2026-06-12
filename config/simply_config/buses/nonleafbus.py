@@ -141,6 +141,22 @@ class NonLeafBus(Bus):
 		return sorted(ranges)
 
 
+	# Return bus and peripherals children names (taking into account LOOPBACK ranges also)
+	# in the same order used by "get_ordered_children_ranges" (increasing base address),
+	# so that names[i] always corresponds to ranges[i]
+	def get_ordered_children_names(self) -> list[str]:
+		pairs = [(p.assigned_addr_ranges, p.FULL_NAME) for p in self._children_peripherals]
+		for bus in self._children_buses:
+			pairs.append((bus.assigned_addr_ranges, bus.FULL_NAME))
+
+		if(self.LOOPBACK):
+			pairs.append((self.loopback_ranges, "LOOPBACK"))
+
+		# Implicitly using "__lt__" function of "Addr_Ranges"
+		pairs.sort(key=lambda pair: pair[0])
+		return [name for _, name in pairs]
+
+
 	#COMPONENT INTERFACE - COMPOSITE IMPLEMENTATION
 	#Recursive part of the recursion
 

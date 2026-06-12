@@ -41,6 +41,10 @@ OUTPUT_UART_ROOT := ${XILINX_IPS_ROOT}/embedded
 # Generated from "config_dump"
 OUTPUT_DUMP := ${CONFIG_ROOT}/memory_map.csv
 
+# Generated from "config_sim"
+OUTPUT_SIM_DEFINES := ${XILINX_ROOT}/sim/generated/sim_defines.svh
+OUTPUT_SIM_ADDRMAP := ${XILINX_ROOT}/sim/generated/sim_addrmap_pkg.sv
+
 
 ###########################
 ###  	CMD PARAMS      ###
@@ -88,6 +92,11 @@ CONFIG_DUMP_ARGS = \
 	--config_dump \
 	--dump_path ${OUTPUT_DUMP}
 
+CONFIG_SIM_ARGS = \
+	--config_sim \
+	--sim_defines ${OUTPUT_SIM_DEFINES} \
+	--sim_addrmap ${OUTPUT_SIM_ADDRMAP}
+
 
 ###########################
 ###  	 TARGETS        ###
@@ -95,8 +104,10 @@ CONFIG_DUMP_ARGS = \
 
 SIMPLY_CONFIG := ${CONFIG_ROOT}/simply_config/simply_config.py
 all:
+	@mkdir -p ${XILINX_ROOT}/sim/generated
 	@${PYTHON} ${SIMPLY_CONFIG} ${INPUT_ARGS} ${CONFIG_MBUS_ARGS} ${CONFIG_PBUS_ARGS}\
-			   ${CONFIG_HBUS_ARGS} ${CONFIG_SW_ARGS} ${CONFIG_HW_ARGS} ${CONFIG_DUMP_ARGS}
+			   ${CONFIG_HBUS_ARGS} ${CONFIG_SW_ARGS} ${CONFIG_HW_ARGS} ${CONFIG_DUMP_ARGS}\
+			   ${CONFIG_SIM_ARGS}
 
 
 # This target can be used to validate configuration without generating
@@ -142,6 +153,15 @@ config_dump:
 
 
 ############################################################
+###					  SIM TARGET						 ###
+############################################################
+
+config_sim:
+	@mkdir -p ${XILINX_ROOT}/sim/generated
+	@${PYTHON} ${SIMPLY_CONFIG} ${INPUT_ARGS} ${CONFIG_SIM_ARGS}
+
+
+############################################################
 ###                     HELP TARGET                      ###
 ############################################################
 
@@ -160,6 +180,7 @@ help:
 	@echo "  config_sw      Generate software configuration files"
 	@echo "  config_xilinx  Generate Xilinx-specific configuration files (HW flow)"
 	@echo "  config_dump    Generate reachability dump of the configured peripherals (CSV)"
+	@echo "  config_sim     Generate simulation-flow configuration files (defines + addrmap)"
 	@echo ""
 	@echo "Simply-Config application help:"
 	@echo "------------------------------------------------------------"

@@ -86,6 +86,11 @@ def parse_args():
 		action="store_true",
 		help="Generate reachability dump (CSV)"
 	)
+	parser.add_argument(
+		"--config_sim",
+		action="store_true",
+		help="Generate simulation-flow configuration outputs"
+	)
 
 
 	# =====================
@@ -123,6 +128,12 @@ def parse_args():
 	parser.add_argument("--ddr4_root", help="Root directory for DDR4 IP generation")
 	parser.add_argument("--bram_root", help="Root directory for BRAM IP generation")
 	parser.add_argument("--uart_root", help="Root directory for UART IP generation")
+
+	# =====================
+	# Simulation outputs
+	# =====================
+	parser.add_argument("--sim_defines", help="Output sim defines header (.svh)")
+	parser.add_argument("--sim_addrmap", help="Output sim addrmap package (.sv)")
 
 	# =====================
 	# Dump output
@@ -281,6 +292,21 @@ def main(logger):
 
 		system.dump_reachability(args.dump_path)
 		logger.simplyv_info("Reachability dump generated at " + args.dump_path)
+
+	# Triggered by Makefile: config_sim or all
+	# =====================
+	# Simulation
+	# =====================
+	if args.config_sim:
+		if not all([args.sim_defines, args.sim_addrmap]):
+			raise ValueError(
+				"config_sim requires --sim_defines and --sim_addrmap"
+			)
+
+		system.config_sim(args.sim_defines, args.sim_addrmap)
+		outputs = [args.sim_defines, args.sim_addrmap]
+		logger.simplyv_info("Simulation configs succesfully generated!")
+		logger.simplyv_info("Simulation output files: " + str(outputs))
 
 
 if __name__ == "__main__":

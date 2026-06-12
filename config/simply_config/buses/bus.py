@@ -157,6 +157,13 @@ class Bus(Node):
 		# Implicitly using "__lt__" function of "Addr_Ranges"
 		return sorted(ranges)
 
+	# Return children peripherals names in the same order used by
+	# "get_ordered_children_ranges" (increasing base address), so that
+	# names[i] always corresponds to ranges[i]
+	def get_ordered_children_names(self) -> list[str]:
+		ordered = sorted(self._children_peripherals, key=lambda p: p.assigned_addr_ranges)
+		return [p.FULL_NAME for p in ordered]
+
 	# Used when printing the object
 	def __str__(self) -> str:
 		children_str = ", ".join(str(child) for child in self._children_peripherals)
