@@ -26,7 +26,7 @@ from templates.ld_template import Ld_Template
 from peripherals.ddr4 import DDR4
 from peripherals.bram import Bram
 from templates.bus_interconnect_template import Bus_Interconnect_Template
-from templates.sim_template import Sim_Defines_Template, Sim_Addrmap_Template
+from templates.sim_template import Sim_Defines_Template, Sim_Addrmap_Template, Sim_Flist_Template
 from pathlib import Path
 from factories.buses_factory import Buses_Factory
 from peripherals.peripheral import Peripheral
@@ -183,10 +183,22 @@ class SimplyV(metaclass=Singleton):
 		return False
 
 
+	# Units of the ibex cone compiled standalone for the Verilator backend
+	SIM_IBEX_CONE_UNITS = (
+			"custom_ibex",
+			"custom_axi_from_mem",
+			"custom_rv32_dbg_bscane",
+			"custom_clint",
+			"custom_rv_plic",
+		)
+
 	# Generate the simulation-flow artifacts (dual backend Verilator/xsim):
-	# sim_defines.svh (mirror of the synth verilog defines) and
-	# sim_addrmap_pkg.sv (crossbar routing rules for the Verilator shims)
-	def config_sim(self, defines_path: str, addrmap_path: str) -> None:
+	# sim_defines.svh (mirror of the synth verilog defines),
+	# sim_addrmap_pkg.sv (crossbar routing rules for the Verilator shims) and,
+	# when flist_path/siminc_dir are given, the Verilator filelist plus the
+	# sim-only include dir (renamed simplyv_axi.svh + $unit-scope prelude)
+	def config_sim(self, defines_path: str, addrmap_path: str,
+				   flist_path: str = None, siminc_dir: str = None) -> None:
 		profile = os.environ.get("SIMPLYV_PROFILE")
 		if profile is None:
 			raise ValueError("SIMPLYV_PROFILE not set: source settings.sh first")
@@ -196,6 +208,104 @@ class SimplyV(metaclass=Singleton):
 
 		addrmap_template = Sim_Addrmap_Template(self.buses)
 		addrmap_template.write_to_file(addrmap_path)
+
+		if flist_path is None:
+			return
+
+		root = os.environ.get("SIMPLYV_ROOT_DIR")
+		if root is None:
+			raise ValueError("SIMPLYV_ROOT_DIR not set: source settings.sh first")
+
+		# 1. Sim include dir: copy simplyv_axi.svh applying the sim-only token
+		# rename axi_resp_t -> axi_resp_code_t (xsim sim-models already declare
+		# an axi_resp_t of their own), copy simplyv_mem.svh unchanged
+		os.makedirs(siminc_dir, exist_ok=True)
+		headers_root = os.path.join(root, "hw", "xilinx", "rtl", "headers")
+		axi_svh = Path(headers_root, "simplyv_axi.svh").read_text()
+		axi_svh = re.sub(r"\baxi_resp_t\b", "axi_resp_code_t", axi_svh)
+		Path(siminc_dir, "simplyv_axi.svh").write_text(axi_svh)
+		Path(siminc_dir, "simplyv_mem.svh").write_text(
+			Path(headers_root, "simplyv_mem.svh").read_text())
+
+		# simplyv_pcie.svh: DEFINE_PCIE_PORTS is declared function-like `()` but
+		# referenced without parens in sys_master.sv (`DEFINE_PCIE_PORTS,). Vivado
+		# tolerates this; Verilator does not. Drop a sim-only copy with the macro
+		# rewritten to object-like form. siminc is the first incdir, so this copy
+		# shadows the real header at `include "simplyv_pcie.svh".
+		pcie_svh = Path(headers_root, "simplyv_pcie.svh").read_text()
+		pcie_svh = re.sub(r"`define\s+DEFINE_PCIE_PORTS\(\)",
+						  "`define DEFINE_PCIE_PORTS", pcie_svh)
+		Path(siminc_dir, "simplyv_pcie.svh").write_text(pcie_svh)
+
+		# 2. Prelude: puts the $unit-scope typedefs in front of every compilation
+		prelude_path = os.path.join(siminc_dir, "_prelude.sv")
+		Path(prelude_path).write_text(
+			"// Auto-generated: puts the $unit-scope typedefs in front of every compilation\n"
+			'`include "simplyv_axi.svh"\n'
+			'`include "simplyv_mem.svh"\n')
+
+		# 3. IP-name-renamed wrappers. Each unit's top module lives in
+		# hw/units/<unit>/custom_top_wrapper.sv and is named custom_top_wrapper,
+		# but the Xilinx RTL instantiates it by IP name (custom_ibex, custom_clint,
+		# ...). Emit one renamed copy per unit (custom_top_wrapper -> <unit>) so the
+		# instantiations resolve and the wrappers don't collide.
+		wrappers_dir = os.path.join(siminc_dir, "wrappers")
+		os.makedirs(wrappers_dir, exist_ok=True)
+		wrapper_files = []
+		for unit in self.SIM_IBEX_CONE_UNITS:
+			src = os.path.join(root, "hw", "units", unit, "custom_top_wrapper.sv")
+			text = Path(src).read_text()
+			text = re.sub(r"\bcustom_top_wrapper\b", unit, text)
+			dest = os.path.join(wrappers_dir, f"{unit}.sv")
+			Path(dest).write_text(text)
+			wrapper_files.append(dest)
+
+		# 4. Filelist: same defines as the .svh (single source of truth) plus
+		# ASSERTS_OFF (sim-only: disables common_cells SVA Verilator can't parse)
+		defines = defines_template.get_define_pairs() + ["ASSERTS_OFF"]
+
+		unit_rtl_dirs = [os.path.join(root, "hw", "units", u, "rtl")
+						 for u in self.SIM_IBEX_CONE_UNITS]
+		xilinx_rtl = os.path.join(root, "hw", "xilinx", "rtl")
+
+		incdirs = [siminc_dir]
+		incdirs += unit_rtl_dirs
+		incdirs += [
+				xilinx_rtl,
+				headers_root,
+				os.path.join(root, "hw", "deps", "axi", "include"),
+				os.path.join(root, "hw", "deps", "common_cells", "include"),
+			]
+
+		rtl_roots = [os.path.join(root, "hw", "xilinx", "sim", "generated")]
+		rtl_roots += unit_rtl_dirs
+		rtl_roots += [
+				xilinx_rtl,
+				os.path.join(root, "hw", "xilinx", "sim", "models", "common"),
+				os.path.join(root, "hw", "xilinx", "sim", "models", "embedded"),
+			]
+
+		exclude_patterns = [
+				r"pad_functional",
+				r"reg_test\.sv$",
+				r"axi_test\.sv$",
+				r"hbus\.sv$",						# HPC-only bus
+				r"hls_conv2d_wrapper\.sv$",			# HPC-only
+				r"ddr4_channel_wrapper\.sv$",		# HPC-only
+				r"virtual_uart\.sv$",				# HPC-only (ifdef HPC in uart_wrapper.sv)
+				r"sim_defines\.svh$",				# header, not a compile unit
+				r"_prelude\.sv$",					# already first via prelude_files
+			]
+
+		flist_template = Sim_Flist_Template(
+				defines=defines,
+				incdirs=incdirs,
+				prelude_files=[prelude_path],
+				rtl_roots=rtl_roots,
+				exclude_patterns=exclude_patterns,
+				extra_files=wrapper_files,
+			)
+		flist_template.write_to_file(flist_path)
 
 
 

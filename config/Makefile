@@ -44,6 +44,8 @@ OUTPUT_DUMP := ${CONFIG_ROOT}/memory_map.csv
 # Generated from "config_sim"
 OUTPUT_SIM_DEFINES := ${XILINX_ROOT}/sim/generated/sim_defines.svh
 OUTPUT_SIM_ADDRMAP := ${XILINX_ROOT}/sim/generated/sim_addrmap_pkg.sv
+OUTPUT_SIM_FLIST   := ${XILINX_ROOT}/sim/generated/verilator_embedded.f
+OUTPUT_SIM_SIMINC  := ${XILINX_ROOT}/sim/generated/siminc
 
 
 ###########################
@@ -95,7 +97,9 @@ CONFIG_DUMP_ARGS = \
 CONFIG_SIM_ARGS = \
 	--config_sim \
 	--sim_defines ${OUTPUT_SIM_DEFINES} \
-	--sim_addrmap ${OUTPUT_SIM_ADDRMAP}
+	--sim_addrmap ${OUTPUT_SIM_ADDRMAP} \
+	--sim_flist ${OUTPUT_SIM_FLIST} \
+	--sim_siminc_dir ${OUTPUT_SIM_SIMINC}
 
 
 ###########################

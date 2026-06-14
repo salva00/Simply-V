@@ -51,6 +51,42 @@ def test_defines_contains_profile_and_bus_macros():
     assert "`define CORE_SELECTOR CORE_IBEX" in out
 
 
+def test_define_pairs_mirror_svh_defines():
+    # The flist generator must consume the SAME define list as the .svh
+    # emission (no duplicated define logic) via get_define_pairs()
+    t = Sim_Defines_Template(FakeSystem(), "embedded")
+    pairs = t.get_define_pairs()
+    assert "EMBEDDED=1" in pairs
+    assert "MBUS_NUM_SI=2" in pairs
+    assert "CORE_SELECTOR=CORE_IBEX" in pairs
+    assert "MAIN_CLOCK_DOMAIN=MAIN_CLOCK_DOMAIN" in pairs
+
+
+def test_flist_orders_packages_before_modules(tmp_path):
+    from templates.sim_template import Sim_Flist_Template
+    # two fake rtl files: a package and a module, written under tmp_path
+    rtl = tmp_path / "rtl"; rtl.mkdir()
+    (rtl / "b_mod.sv").write_text("module b_mod; endmodule\n")
+    (rtl / "a_pkg.sv").write_text("package a_pkg; endpackage\n")
+    t = Sim_Flist_Template(defines=["EMBEDDED=1"], incdirs=[str(rtl)],
+                           prelude_files=[], rtl_roots=[str(rtl)],
+                           exclude_patterns=[], extra_files=[])
+    body = t.get_params()["body"]
+    assert body.index("a_pkg.sv") < body.index("b_mod.sv")
+    assert "+define+EMBEDDED=1" in body
+    assert f"+incdir+{rtl}" in body
+
+
+def test_flist_tolerates_missing_roots(tmp_path):
+    # sim model roots may not exist yet (shims arrive in later tasks):
+    # the generator must not crash on missing/empty rtl_roots
+    from templates.sim_template import Sim_Flist_Template
+    t = Sim_Flist_Template(defines=[], incdirs=[],
+                           prelude_files=[], rtl_roots=[str(tmp_path / "nope")],
+                           exclude_patterns=[], extra_files=[])
+    assert t.get_params()["body"] == ""
+
+
 def test_addrmap_rules_match_csv_ranges():
     out = Sim_Addrmap_Template([FakeBus()]).get_params()["body"]
     assert "MBUS_NumRules" in out

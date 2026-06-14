@@ -134,6 +134,8 @@ def parse_args():
 	# =====================
 	parser.add_argument("--sim_defines", help="Output sim defines header (.svh)")
 	parser.add_argument("--sim_addrmap", help="Output sim addrmap package (.sv)")
+	parser.add_argument("--sim_flist", help="Output Verilator filelist (.f)")
+	parser.add_argument("--sim_siminc_dir", help="Output sim-only include dir (renamed headers + prelude)")
 
 	# =====================
 	# Dump output
@@ -303,8 +305,17 @@ def main(logger):
 				"config_sim requires --sim_defines and --sim_addrmap"
 			)
 
-		system.config_sim(args.sim_defines, args.sim_addrmap)
+		# Optional filelist outputs: either both or none
+		if bool(args.sim_flist) != bool(args.sim_siminc_dir):
+			raise ValueError(
+				"config_sim requires both --sim_flist and --sim_siminc_dir when either is given"
+			)
+
+		system.config_sim(args.sim_defines, args.sim_addrmap,
+						  args.sim_flist, args.sim_siminc_dir)
 		outputs = [args.sim_defines, args.sim_addrmap]
+		if args.sim_flist:
+			outputs += [args.sim_flist, args.sim_siminc_dir]
 		logger.simplyv_info("Simulation configs succesfully generated!")
 		logger.simplyv_info("Simulation output files: " + str(outputs))
 

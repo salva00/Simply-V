@@ -115,8 +115,6 @@ XILINX_VIVADO_ENV =                                 \
     XILINX_PROBE_LTX=${XILINX_PROBE_LTX}            \
     IP_LIST_XCI="${IP_LIST_XCI}"                    \
     XILINX_ROOT=${XILINX_ROOT}                      \
-    QUESTA_PATH=${QUESTA_PATH}                      \
-    GCC_PATH=${GCC_PATH}                            \
     XILINX_SIMLIB_PATH=${XILINX_SIMLIB_PATH}
 
 # Package Vivado command in a single variable.

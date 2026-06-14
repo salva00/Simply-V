@@ -10,12 +10,13 @@ Third-party provenance (constraint: only repos cataloged in openhwgroup/uap):
 
 | IP (module) | Vendor (xsim) | Verilator (open) | Covered by test | State |
 |---|---|---|---|---|
-| smoke_dut (no IP) | shared rtl | shared rtl | smoke | R0 |
-| xlnx_mbus_crossbar | Vivado sim-model | shim on pulp axi_xbar + sim_addrmap_pkg | hello_world | R1 |
-| xlnx_pbus_crossbar | Vivado sim-model | shim on pulp axi_lite_xbar + sim_addrmap_pkg | hello_world | R1 |
-| xlnx_clk_wiz | Vivado sim-model | behavioral shim (sim-only) | hello_world | R1 |
-| xlnx_blk_mem_gen_0 | sim-model + COE | AXI4 shim + plusarg preload | hello_world | R1 |
-| xlnx_axi_uartlite | Vivado sim-model | register-accurate shim | hello_world | R1 |
+| smoke_dut (no IP) | shared rtl | shared rtl | smoke | R0 ✅ |
+| xlnx_mbus_crossbar | Vivado sim-model | shim on pulp axi_xbar + sim_addrmap_pkg | hello_world | R1 ✅ |
+| xlnx_pbus_crossbar | Vivado sim-model | shim on pulp axi_lite_xbar + sim_addrmap_pkg | hello_world | R1 ✅ |
+| xlnx_clk_wiz | Vivado sim-model | behavioral shim (all clocks = clk_in1, single domain) | hello_world | R1 ✅ |
+| xlnx_bram_0 (boot) | sim-model + COE preload | AXI4 shim + `+BRAM0_INIT=` plusarg | hello_world | R1 ✅ |
+| xlnx_bram_1 (main mem) | sim-model (no preload) | AXI4 shim (shared `sim_axi_bram` core, `+BRAM1_INIT=`) | hello_world | R1 ✅ |
+| xlnx_axi_uartlite | Vivado sim-model | register-accurate shim | hello_world | R1 ✅ |
 | xlnx_axilite_timer | Vivado sim-model | functional shim | timer test | R2 |
 | xlnx_axi_gpio_in / _out | Vivado sim-model | functional shim | gpio test | R2 |
 | xlnx_axi_cdma | Vivado sim-model | functional shim | cdma test | R2 |

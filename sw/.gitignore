@@ -1,7 +1,9 @@
 # Software build outputs
+bin/
 *.elf
 *.bin
 *.dump
+*.hex
 *.o
 *.so
 *.a

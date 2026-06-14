@@ -44,6 +44,10 @@ bin/$(PROGRAM_NAME).bin: bin/$(PROGRAM_NAME).elf
 	@echo "[ELF] Linking OBJs $^ into ELF $@"
 	$(OBJCOPY) -O binary bin/$(PROGRAM_NAME).elf bin/$(PROGRAM_NAME).bin
 
+bin/$(PROGRAM_NAME).hex: bin/$(PROGRAM_NAME).elf
+	@echo "[ELF] Creating byte-granular hex $@ from $<"
+	$(OBJCOPY) -O verilog --verilog-data-width=1 $< $@
+
 dump: bin/$(PROGRAM_NAME).dump
 bin/$(PROGRAM_NAME).dump:
 	$(OBJDUMP) -D bin/$(PROGRAM_NAME).elf > $@

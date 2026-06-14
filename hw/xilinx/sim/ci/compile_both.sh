@@ -19,4 +19,9 @@ else
   echo "== [CI] xsim smoke SKIPPED (Vivado not in PATH) =="
 fi
 
+# Cheap drift-catcher: elaborate the full embedded cone on Verilator (lint-only,
+# no simulation run).  Catches port mismatches between shims and RTL early.
+echo "== [CI] embedded elaboration gate (Verilator lint-only) =="
+make -C hw/xilinx sim_elab_embedded
+
 echo "[CI] ALL PASS"
