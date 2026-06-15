@@ -3,10 +3,19 @@
 // NO #-delays (Verilator --no-timing).
 //
 // Register map (byte offsets on s_axi_araddr/awaddr[3:0]):
-//   0x00  RX_FIFO  (read)  -- always 0, no RX in Phase R1
+//   0x00  RX_FIFO  (read)  -- returns the received byte; clears RX_VALID on read
 //   0x04  TX_FIFO  (write) -- write byte to transmit
-//   0x08  STATUS   (read)  -- bit2=TX_EMPTY, bit3=TX_FULL (active when busy)
+//   0x08  STATUS   (read)  -- bit0=RX_VALID (RX_NOT_EMPTY), bit2=TX_EMPTY,
+//                             bit3=TX_FULL (active when busy)
 //   0x0C  CTRL     (write) -- ignored
+//
+// RX (Phase R2a): a serial receiver samples the `rx` input at the SAME bit
+// timing the TX uses (SIM_UART_CYCLES_PER_BIT). It detects the start bit
+// (idle 1 -> 0), samples 8 data bits LSB-first at bit centres, checks the stop
+// bit, and latches the byte into a 1-deep RX holding register. STATUS bit0
+// (RX_VALID) is set while a byte is held; a read of RX_FIFO@0x00 returns the
+// byte and clears the bit. This is register-accurate to the tinyio driver
+// (uart_get_char polls STATUS bit0, then reads RX@0x00).
 //
 // CONTRACT: SIM_UART_CYCLES_PER_BIT controls bit timing.
 // The value is injected from sim.mk via +define+SIM_UART_CYCLES_PER_BIT=<N>
@@ -78,8 +87,102 @@ module xlnx_axi_uartlite (
     // tx idles high
     assign tx = tx_busy ? tx_shift[0] : 1'b1;
 
+    // -------------------------------------------------------------------------
+    // UART RX deserializer (mirror of the TX serializer timing).
+    // Samples `rx` at bit centres, CYCLES_PER_BIT apart. 1-deep holding reg.
+    // -------------------------------------------------------------------------
+    typedef enum logic [1:0] {RX_IDLE, RX_START, RX_DATA, RX_STOP} rx_state_t;
+    rx_state_t   rx_state;
+    logic [7:0]  rx_shift;       // assembling the incoming byte (LSB first)
+    logic [2:0]  rx_bit_idx;     // which data bit (0..7)
+    logic [7:0]  rx_cycle_cnt;   // cycles within the current bit period
+    logic [7:0]  rx_holding;     // 1-deep RX holding register
+    logic        rx_valid;       // a byte is held (STATUS bit0 = RX_NOT_EMPTY)
+    logic        rx_meta;        // synchroniser stage for the async rx line
+    logic        rx_sync;        // synchronised rx
+
+    // Pulse raised by the read FSM when RX_FIFO@0x00 is read, to clear rx_valid.
+    logic        rx_read_ack;
+
+    always_ff @(posedge s_axi_aclk or negedge s_axi_aresetn) begin
+        if (!s_axi_aresetn) begin
+            rx_state     <= RX_IDLE;
+            rx_shift     <= '0;
+            rx_bit_idx   <= '0;
+            rx_cycle_cnt <= '0;
+            rx_holding   <= '0;
+            rx_valid     <= 1'b0;
+            rx_meta      <= 1'b1;
+            rx_sync      <= 1'b1;
+        end else begin
+            // Two-stage synchroniser for the rx input (idles high).
+            rx_meta <= rx;
+            rx_sync <= rx_meta;
+
+            // Clear the holding register when the CPU reads RX_FIFO.
+            if (rx_read_ack)
+                rx_valid <= 1'b0;
+
+            case (rx_state)
+                RX_IDLE: begin
+                    rx_cycle_cnt <= '0;
+                    rx_bit_idx   <= '0;
+                    // Start bit: idle high -> low.
+                    if (rx_sync == 1'b0) begin
+                        rx_state     <= RX_START;
+                        rx_cycle_cnt <= '0;
+                    end
+                end
+
+                // Advance to the centre of the start bit and confirm it.
+                RX_START: begin
+                    if (rx_cycle_cnt == (CYCLES_PER_BIT/2 - 1)) begin
+                        rx_cycle_cnt <= '0;
+                        if (rx_sync == 1'b0)
+                            rx_state <= RX_DATA;   // valid start, go sample data
+                        else
+                            rx_state <= RX_IDLE;   // glitch, abort
+                    end else begin
+                        rx_cycle_cnt <= rx_cycle_cnt + 8'd1;
+                    end
+                end
+
+                // Sample each data bit one full bit period after the previous
+                // sample point (so at the centre of each data bit).
+                RX_DATA: begin
+                    if (rx_cycle_cnt == (CYCLES_PER_BIT - 1)) begin
+                        rx_cycle_cnt        <= '0;
+                        rx_shift[rx_bit_idx] <= rx_sync;   // LSB first
+                        if (rx_bit_idx == 3'd7)
+                            rx_state <= RX_STOP;
+                        else
+                            rx_bit_idx <= rx_bit_idx + 3'd1;
+                    end else begin
+                        rx_cycle_cnt <= rx_cycle_cnt + 8'd1;
+                    end
+                end
+
+                // Sample the stop bit at its centre, then latch the byte.
+                RX_STOP: begin
+                    if (rx_cycle_cnt == (CYCLES_PER_BIT - 1)) begin
+                        rx_cycle_cnt <= '0;
+                        // Accept the frame regardless of stop-bit value (sim is
+                        // glitch-free); latch into the 1-deep holding register.
+                        rx_holding <= rx_shift;
+                        rx_valid   <= 1'b1;
+                        rx_state   <= RX_IDLE;
+                    end else begin
+                        rx_cycle_cnt <= rx_cycle_cnt + 8'd1;
+                    end
+                end
+
+                default: rx_state <= RX_IDLE;
+            endcase
+        end
+    end
+
     // STATUS bits:
-    //   bit0 = RX_VALID  (always 0)
+    //   bit0 = RX_VALID  (RX_NOT_EMPTY: a byte is held)
     //   bit1 = RX_FULL   (always 0)
     //   bit2 = TX_EMPTY  (1 when idle, 0 when busy)
     //   bit3 = TX_FULL   (1 when busy, 0 when idle)
@@ -88,7 +191,7 @@ module xlnx_axi_uartlite (
                          tx_busy,     // bit3: TX_FULL when busy
                          ~tx_busy,    // bit2: TX_EMPTY when idle
                          1'b0,        // bit1: RX_FULL
-                         1'b0};       // bit0: RX_VALID
+                         rx_valid};   // bit0: RX_VALID (RX_NOT_EMPTY)
 
     // -------------------------------------------------------------------------
     // AXI-Lite write FSM
@@ -186,7 +289,9 @@ module xlnx_axi_uartlite (
             s_axi_rvalid  <= 1'b0;
             s_axi_rdata   <= '0;
             s_axi_rresp   <= 2'b00;
+            rx_read_ack   <= 1'b0;
         end else begin
+            rx_read_ack <= 1'b0;   // single-cycle pulse by default
             case (rd_state)
                 RD_IDLE: begin
                     s_axi_rvalid  <= 1'b0;
@@ -195,7 +300,11 @@ module xlnx_axi_uartlite (
                         s_axi_arready <= 1'b0;
                         // Decode register address (bits [3:2])
                         case (s_axi_araddr[3:2])
-                            2'b00: s_axi_rdata <= 32'd0;        // RX_FIFO: no RX data
+                            // RX_FIFO: return the held byte and clear RX_VALID.
+                            2'b00: begin
+                                s_axi_rdata <= {24'd0, rx_holding};
+                                rx_read_ack <= 1'b1;
+                            end
                             2'b10: s_axi_rdata <= status_reg;   // STATUS
                             default: s_axi_rdata <= 32'd0;
                         endcase
