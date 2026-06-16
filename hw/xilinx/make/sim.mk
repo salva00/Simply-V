@@ -53,7 +53,9 @@ TEST_STIM_ARG := $(if $(wildcard ${TEST_STIM}),+STIMULUS=${TEST_STIM},)
 # with -DSIM_FAST (1000x shorter periods, same interrupt counts). The bin is forced
 # clean below so a stale one (SIM_FAST, picorv32 CSR-skip, other CORE) is never reused.
 # The FPGA build is unchanged; only the sim-only branches differ.
-TEST_EXTRA_MACROS := $(if $(filter interrupts,${TEST}),-DSIM_FAST,)
+# interrupts: real-time periods impractical in sim (SIM_FAST = 1000x shorter).
+# xlnx_cdma_examples: reduces to 1 round in sim; golden checks round 0 only.
+TEST_EXTRA_MACROS := $(if $(filter interrupts xlnx_cdma_examples,${TEST}),-DSIM_FAST,)
 # Firmware specialization keyed on CORE_SELECTOR/XLEN resolved from config.mk (phase 1
 # of `sim` regenerates config.mk from the active CSV before this makefile is re-read).
 # CORE_PICORV32 lacks standard CSRs and compressed-ISA support: build without the
@@ -278,7 +280,9 @@ VL_EMB_GOLDEN := ${TEST_GOLDEN}
 # ${TEST_HEX} is a prerequisite so the example program is built on demand.
 sim_verilator_embedded: ${TEST_HEX}
 	mkdir -p ${VL_EMB_DIR}
+	# --threads 4: parallel netlist evaluation; significant win on large designs (Ara).
 	${VERILATOR} -cc --exe --build -j 0 -sv -Wno-fatal -Wno-ENUMVALUE -fno-dfg --no-timing \
+		--threads 4 \
 		--top-module simplyv \
 		+define+SIM_UART_CYCLES_PER_BIT=${SIM_UART_CYCLES_PER_BIT} \
 		-Mdir ${VL_EMB_DIR} \

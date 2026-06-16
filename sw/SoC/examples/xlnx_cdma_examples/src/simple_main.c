@@ -16,11 +16,17 @@
 #include <stdint.h>
 
 // Multi-Round Test Parameters
+// SIM_FAST: only round 0 (8 words); golden checks round 0 only.
+#ifdef SIM_FAST
+#define NUM_ROUNDS  1u
+#else
 #define NUM_ROUNDS  3u
+#endif
 #define BUFFER_SIZE 128u
 
-// Number of 32-bit num_words to transfer for each round
-static const uint32_t WORDS_ROUND[NUM_ROUNDS] = {
+// Number of 32-bit num_words to transfer for each round.
+// Fixed 3-entry array; loop uses NUM_ROUNDS so rounds 1-2 are skipped in SIM_FAST.
+static const uint32_t WORDS_ROUND[3] = {
     8u,   // Round 0:  8 num_words  ( 32 bytes)
     16u,  // Round 1: 16 num_words  ( 64 bytes)
     32u   // Round 2: 32 num_words (128 bytes)
