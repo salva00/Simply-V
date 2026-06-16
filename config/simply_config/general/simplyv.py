@@ -16,6 +16,7 @@
 
 import os
 import re
+import shutil
 from buses.nonleafbus import NonLeafBus
 from .error import Conflict_Error, Unsupported_Value_Error
 from templates.dump_template import Dump_Template
@@ -183,14 +184,32 @@ class SimplyV(metaclass=Singleton):
 		return False
 
 
-	# Units of the ibex cone compiled standalone for the Verilator backend
-	SIM_IBEX_CONE_UNITS = (
-			"custom_ibex",
-			"custom_axi_from_mem",
-			"custom_rv32_dbg_bscane",
-			"custom_clint",
-			"custom_rv_plic",
-		)
+	# Per-core sim cone: units compiled standalone for the Verilator backend,
+	# keyed by CORE_SELECTOR. ponytail: plain dict lookup, no factory/class.
+	# picorv32 omits custom_rv32_dbg_bscane (rv_socket.sv gates the debug module
+	# to {CV32E40P, IBEX}, so picorv32 never instantiates it).
+	SIM_CONE_UNITS = {
+			"CORE_IBEX": (
+					"custom_ibex",
+					"custom_axi_from_mem",
+					"custom_rv32_dbg_bscane",
+					"custom_clint",
+					"custom_rv_plic",
+				),
+			"CORE_CV32E40P": (
+					"custom_cv32e40p",
+					"custom_axi_from_mem",
+					"custom_rv32_dbg_bscane",
+					"custom_clint",
+					"custom_rv_plic",
+				),
+			"CORE_PICORV32": (
+					"custom_picorv32",
+					"custom_axi_from_mem",
+					"custom_clint",
+					"custom_rv_plic",
+				),
+		}
 
 	# Generate the simulation-flow artifacts (dual backend Verilator/xsim):
 	# sim_defines.svh (mirror of the synth verilog defines),
@@ -250,12 +269,22 @@ class SimplyV(metaclass=Singleton):
 		# ...). Emit one renamed copy per unit (custom_top_wrapper -> <unit>) so the
 		# instantiations resolve and the wrappers don't collide.
 		wrappers_dir = os.path.join(siminc_dir, "wrappers")
+		# Clear stale wrappers from a previous core's cone (e.g. custom_ibex.sv
+		# left over when switching to cv32e40p) so they don't get globbed in.
+		shutil.rmtree(wrappers_dir, ignore_errors=True)
 		os.makedirs(wrappers_dir, exist_ok=True)
+		cone_units = self.SIM_CONE_UNITS[self.CORE_SELECTOR]
 		wrapper_files = []
-		for unit in self.SIM_IBEX_CONE_UNITS:
+		for unit in cone_units:
 			src = os.path.join(root, "hw", "units", unit, "custom_top_wrapper.sv")
 			text = Path(src).read_text()
 			text = re.sub(r"\bcustom_top_wrapper\b", unit, text)
+			# ponytail: cv32e40p's wrapper instantiates cv32e40p_top with no
+			# instance name (param-close `)` then port-open `(`); Vivado tolerates
+			# it, Verilator rejects it. Insert a sim-only name on the `cv32e40p_top
+			# #( ... ) (` idiom only (the module's own `) (` header is left alone).
+			text = re.sub(r"(cv32e40p_top\s*#\(.*?\n\s*)\)\s*\(",
+						  r"\1) u_core (", text, flags=re.DOTALL)
 			dest = os.path.join(wrappers_dir, f"{unit}.sv")
 			Path(dest).write_text(text)
 			wrapper_files.append(dest)
@@ -265,7 +294,7 @@ class SimplyV(metaclass=Singleton):
 		defines = defines_template.get_define_pairs() + ["ASSERTS_OFF"]
 
 		unit_rtl_dirs = [os.path.join(root, "hw", "units", u, "rtl")
-						 for u in self.SIM_IBEX_CONE_UNITS]
+						 for u in cone_units]
 		xilinx_rtl = os.path.join(root, "hw", "xilinx", "rtl")
 
 		incdirs = [siminc_dir]

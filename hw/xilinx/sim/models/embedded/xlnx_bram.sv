@@ -98,6 +98,12 @@ module sim_axi_bram #(
 
     logic [3:0]           wr_id;
     logic [ADDR_BITS-1:0] wr_addr;        // current beat byte address (low ADDR_BITS)
+
+    // ponytail: cores may issue byte addresses (e.g. cv32e40p OBI sends 0xcc1) and
+    // select the byte via be/wstrb. Word-align the base so the lane is picked WITHIN
+    // the aligned word (AXI-conformant). ibex already sends aligned addresses -> no-op.
+    wire [ADDR_BITS-1:0] awaddr_aligned = {s_axi_awaddr[ADDR_BITS-1:2], 2'b00};
+    wire [ADDR_BITS-1:0] araddr_aligned = {s_axi_araddr[ADDR_BITS-1:2], 2'b00};
     logic [7:0]           wr_beats_left;
 
     always_ff @(posedge s_aclk or negedge s_aresetn) begin
@@ -119,7 +125,7 @@ module sim_axi_bram #(
                     s_axi_wready  <= 1'b0;
                     if (s_axi_awvalid && s_axi_awready) begin
                         wr_id         <= s_axi_awid;
-                        wr_addr       <= s_axi_awaddr[ADDR_BITS-1:0];
+                        wr_addr       <= awaddr_aligned;
                         wr_beats_left <= s_axi_awlen;
                         s_axi_awready <= 1'b0;
                         s_axi_wready  <= 1'b1;
@@ -195,14 +201,14 @@ module sim_axi_bram #(
                         s_axi_arready <= 1'b0;
                         // Present first beat immediately
                         s_axi_rid   <= s_axi_arid;
-                        s_axi_rdata <= {mem[s_axi_araddr[ADDR_BITS-1:0] + ADDR_BITS'(3)],
-                                        mem[s_axi_araddr[ADDR_BITS-1:0] + ADDR_BITS'(2)],
-                                        mem[s_axi_araddr[ADDR_BITS-1:0] + ADDR_BITS'(1)],
-                                        mem[s_axi_araddr[ADDR_BITS-1:0] + ADDR_BITS'(0)]};
+                        s_axi_rdata <= {mem[araddr_aligned + ADDR_BITS'(3)],
+                                        mem[araddr_aligned + ADDR_BITS'(2)],
+                                        mem[araddr_aligned + ADDR_BITS'(1)],
+                                        mem[araddr_aligned + ADDR_BITS'(0)]};
                         s_axi_rresp  <= 2'b00; // OKAY
                         s_axi_rlast  <= (s_axi_arlen == 8'd0);
                         s_axi_rvalid <= 1'b1;
-                        rd_addr       <= s_axi_araddr[ADDR_BITS-1:0] + ADDR_BITS'(4);
+                        rd_addr       <= araddr_aligned + ADDR_BITS'(4);
                         rd_state      <= RD_DATA;
                     end
                 end

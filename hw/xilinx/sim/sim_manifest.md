@@ -25,3 +25,15 @@ base to adapt (Questa is SV-native; xsim targets stay but are not in the active 
 | xlnx_axilite_timer | export base ready | functional shim (counter + IRQ) | interrupts | R2a ✅ |
 | xlnx_axi_gpio_in / _out | export base ready | functional shim (IRQ on change) | interrupts | R2a ✅ |
 | xlnx_axi_cdma | export base ready | functional shim (simple mem-to-mem) | xlnx_cdma_examples | R2a ✅ |
+
+## Cores (Verilator, XLEN=32) — `make sim BACKEND=verilator TEST=hello_world CORE=<core>`
+
+| Core | hello_world | Notes |
+|---|---|---|
+| ibex (default, CORE empty) | ✅ | baseline |
+| cv32e40p | ✅ | needed BRAM shim word-align fix (cv32e40p OBI sends byte addresses) |
+| picorv32 | ✅ | needs no-RVC firmware (CORE=picorv32 builds app+libs with C_EXTENSION=N) + crt0 CSR-skip (no standard mtvec/mstatus/mie). COMPRESSED_ISA=0, custom IRQ. |
+
+Per-core cone is selected by `simply_config` (`SIM_CONE_UNITS[CORE_SELECTOR]`); the `CORE=`
+override generates a temp per-core config CSV without touching the user's config_system.csv.
+cv64a6 (XLEN=64) is a separate future cycle (R2b-2).

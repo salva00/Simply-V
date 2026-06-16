@@ -106,6 +106,18 @@ class StubChild:
         self.assigned_addr_ranges = Addr_Ranges(full_name, [base], [width])
 
 
+def test_sim_cone_units_per_core():
+    # The per-core sim cone is a plain dict lookup keyed by CORE_SELECTOR.
+    # cv32e40p swaps custom_ibex -> custom_cv32e40p; picorv32 drops the dbg unit.
+    from general.simplyv import SimplyV
+    cone = SimplyV.SIM_CONE_UNITS
+    assert "custom_cv32e40p" in cone["CORE_CV32E40P"]
+    assert "custom_ibex" not in cone["CORE_CV32E40P"]
+    assert "custom_ibex" in cone["CORE_IBEX"]
+    assert "custom_picorv32" in cone["CORE_PICORV32"]
+    assert "custom_rv32_dbg_bscane" not in cone["CORE_PICORV32"]
+
+
 def test_real_nonleafbus_names_align_with_ranges():
     # Exercise the REAL NonLeafBus methods (not fakes). The full constructor
     # needs CSV-driven dicts and singletons, so build a skeleton and set only

@@ -114,6 +114,11 @@ _reset_handler:
   # Enable Interrupts #
   #####################
 
+  # ponytail: picorv32 has no standard mtvec/mstatus/mie CSRs (custom IRQ scheme)
+  # and hangs on these csrw. Skip them when assembled for picorv32
+  # (-Wa,--defsym,CORE_PICORV32=1). Other cores: unchanged. Interrupt apps are
+  # not supported on picorv32 anyway (see rv_socket.sv note).
+.ifndef CORE_PICORV32
   # Set mtvec to vectored mode
   la a0, _vector_table_start  # Load vector table base address
   li a1, 1                    # Set vectored mode bit
@@ -125,6 +130,7 @@ _reset_handler:
 
   # Disable all interrupt lines in mie register
   csrs mie, zero
+.endif
 
   ########
   # Tail #
