@@ -49,10 +49,10 @@ LIB_INC_LIST     = $(LIB_INC_TINYIO) $(LIB_INC_SIMPLYV)
 
 include $(SW_ROOT)/SoC/common/config.mk
 
-# This example only works at 32 bits for now
-ifeq (${XLEN},64)
-$(error "Trying to build ${PROGRAM_NAME} with RV64, but it only supportx RV32 for now)
-endif
+# RV64 is fine here: the CDMA has 32-bit SRC/DST address regs and the driver writes
+# LOWER_32_BITS of each pointer; the whole SoC memory map (BRAM, stack, buffers) lives
+# below 0x10000, so the upper 32 bits are always zero and the truncation is lossless.
+# Data width (32b) is independent of XLEN.
 
 ###########
 # Targets #

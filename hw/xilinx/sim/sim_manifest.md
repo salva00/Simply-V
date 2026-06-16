@@ -26,14 +26,23 @@ base to adapt (Questa is SV-native; xsim targets stay but are not in the active 
 | xlnx_axi_gpio_in / _out | export base ready | functional shim (IRQ on change) | interrupts | R2a ✅ |
 | xlnx_axi_cdma | export base ready | functional shim (simple mem-to-mem) | xlnx_cdma_examples | R2a ✅ |
 
-## Cores (Verilator, XLEN=32) — `make sim BACKEND=verilator TEST=hello_world CORE=<core>`
+## Cores (Verilator) — `make sim BACKEND=verilator TEST=<test> CORE=<core>`
 
-| Core | hello_world | Notes |
+Cores are green for `hello_world` + `echo`/`interrupts`/`xlnx_cdma_examples`, except
+picorv32 which skips `interrupts` (custom IRQ, see Notes).
+
+| Core | XLEN | Notes |
 |---|---|---|
-| ibex (default, CORE empty) | ✅ | baseline |
-| cv32e40p | ✅ | needed BRAM shim word-align fix (cv32e40p OBI sends byte addresses) |
-| picorv32 | ✅ | needs no-RVC firmware (CORE=picorv32 builds app+libs with C_EXTENSION=N) + crt0 CSR-skip (no standard mtvec/mstatus/mie). COMPRESSED_ISA=0, custom IRQ. |
+| ibex (default, CORE empty) | 32 | baseline |
+| cv32e40p | 32 | needed BRAM shim word-align fix (cv32e40p OBI sends byte addresses) |
+| picorv32 | 32 | needs no-RVC firmware (CORE=picorv32 builds app+libs with C_EXTENSION=N) + crt0 CSR-skip (no standard mtvec/mstatus/mie). COMPRESSED_ISA=0, custom IRQ -> the standard `interrupts` example (CLINT/PLIC -> mtvec) does not run; hello_world/echo/cdma pass. |
+| cv64a6 | 64 | CVA6 scalar; firmware rv64im/lp64 (CORE=cv64a6 builds app+libs with XLEN=64). |
+| cv64a6_ara | 64 | CVA6 + Ara vector unit; same XLEN=64 firmware. Ara CDMA is the slowest run (~25-30 min CPU). |
+
+The 64-bit cores need the **riscv64 toolchain** (`riscv64-unknown-elf-`, on PATH via
+`settings.sh`); the Ara RTL is vendored via `hw/units/custom_cv64a6_ara/fetch_sources.sh`.
 
 Per-core cone is selected by `simply_config` (`SIM_CONE_UNITS[CORE_SELECTOR]`); the `CORE=`
 override generates a temp per-core config CSV without touching the user's config_system.csv.
-cv64a6 (XLEN=64) is a separate future cycle (R2b-2).
+The firmware FORCE recipe (sim.mk) rebuilds the tinyio/simplyv static libs to each run's
+XLEN/C_EXTENSION, so back-to-back multi-core runs (e.g. rv32 after rv64) link cleanly.

@@ -185,7 +185,7 @@ class SimplyV(metaclass=Singleton):
 
 
 	# Per-core sim cone: units compiled standalone for the Verilator backend,
-	# keyed by CORE_SELECTOR. ponytail: plain dict lookup, no factory/class.
+	# keyed by CORE_SELECTOR (plain dict lookup, no factory/class).
 	# picorv32 omits custom_rv32_dbg_bscane (rv_socket.sv gates the debug module
 	# to {CV32E40P, IBEX}, so picorv32 never instantiates it).
 	SIM_CONE_UNITS = {
@@ -206,6 +206,20 @@ class SimplyV(metaclass=Singleton):
 			"CORE_PICORV32": (
 					"custom_picorv32",
 					"custom_axi_from_mem",
+					"custom_clint",
+					"custom_rv_plic",
+				),
+			"CORE_CV64A6": (
+					"custom_cv64a6",
+					"custom_axi_from_mem",
+					"custom_rv64_dbg_bscane",
+					"custom_clint",
+					"custom_rv_plic",
+				),
+			"CORE_CV64A6_ARA": (
+					"custom_cv64a6_ara",
+					"custom_axi_from_mem",
+					"custom_rv64_dbg_bscane",
 					"custom_clint",
 					"custom_rv_plic",
 				),
@@ -279,10 +293,10 @@ class SimplyV(metaclass=Singleton):
 			src = os.path.join(root, "hw", "units", unit, "custom_top_wrapper.sv")
 			text = Path(src).read_text()
 			text = re.sub(r"\bcustom_top_wrapper\b", unit, text)
-			# ponytail: cv32e40p's wrapper instantiates cv32e40p_top with no
-			# instance name (param-close `)` then port-open `(`); Vivado tolerates
-			# it, Verilator rejects it. Insert a sim-only name on the `cv32e40p_top
-			# #( ... ) (` idiom only (the module's own `) (` header is left alone).
+			# cv32e40p's wrapper instantiates cv32e40p_top with no instance name
+			# (param-close `)` then port-open `(`); Vivado tolerates it, Verilator
+			# rejects it. Insert a sim-only name on the `cv32e40p_top #( ... ) (`
+			# idiom only (the module's own `) (` header is left alone).
 			text = re.sub(r"(cv32e40p_top\s*#\(.*?\n\s*)\)\s*\(",
 						  r"\1) u_core (", text, flags=re.DOTALL)
 			dest = os.path.join(wrappers_dir, f"{unit}.sv")
@@ -297,8 +311,24 @@ class SimplyV(metaclass=Singleton):
 						 for u in cone_units]
 		xilinx_rtl = os.path.join(root, "hw", "xilinx", "rtl")
 
+		# cv64a6 flattens the whole CVA6 tree into its rtl/ dir, which includes a
+		# prim-style assertions.svh (2-arg ASSUME_I) that collides by bare name
+		# with the common_cells assertions.svh (3-arg) shipped under
+		# custom_axi_from_mem/rtl and used by addr_decode_dync.sv. The CORE unit
+		# (cone_units[0]) is searched first for `include, so its copy shadows the
+		# sibling each non-core unit expects. CVA6's own files never include the
+		# bare assertions.svh (they use axi_/register_interface_ renamed headers),
+		# so push the CORE unit's rtl incdir LAST: shared bare-name headers
+		# (assertions.svh, registers.svh) then resolve to the non-core unit that
+		# owns them, while CVA6 still finds its uniquely-named headers anywhere.
+		core_unit = cone_units[0]
+		incdir_unit_dirs = (
+				[os.path.join(root, "hw", "units", u, "rtl")
+				 for u in cone_units if u != core_unit]
+				+ [os.path.join(root, "hw", "units", core_unit, "rtl")])
+
 		incdirs = [siminc_dir]
-		incdirs += unit_rtl_dirs
+		incdirs += incdir_unit_dirs
 		incdirs += [
 				xilinx_rtl,
 				headers_root,
@@ -325,6 +355,97 @@ class SimplyV(metaclass=Singleton):
 				r"sim_defines\.svh$",				# header, not a compile unit
 				r"_prelude\.sv$",					# already first via prelude_files
 			]
+
+		# cv64a6 vendors the full CVA6 SoC/FPGA/TB tree flat into rtl/. The cva6 core
+		# is instantiated directly from custom_top_wrapper with our own SoC
+		# (clint/plic/uart/bram), so the CVA6 SoC-top, FPGA-board and TB files are
+		# unused alternates that pull in undefined macros (ariane_xilinx.sv references
+		# `RVFI_PROBES_INSTR_T without including rvfi_types.svh) and duplicate-peripheral
+		# modules. Drop them from the cone (matched anywhere in the path -> only hits
+		# the cv64a6 rtl copies).
+		# cv64a6_ara IS CVA6 (+Ara), so it needs the SAME CVA6 SoC/FPGA/TB exclusions +
+		# duplicate-module de-dup. Ara adds its own SoC/TB integration tops
+		# (ara_soc.sv/ara_system.sv) which fetch_sources already stripped from rtl.flist;
+		# any further Ara junk gets added below as elaboration reveals it.
+		if self.CORE_SELECTOR in ("CORE_CV64A6", "CORE_CV64A6_ARA"):
+			exclude_patterns += [
+					r"ariane_xilinx\.sv$",				# CVA6 FPGA board top
+					r"ariane_peripherals_xilinx\.sv$",	# CVA6 FPGA peripherals
+					r"fan_ctrl\.sv$",					# CVA6 FPGA fan controller
+					r"/ariane\.sv$",					# CVA6 SoC top (we use cva6 directly)
+					r"rvfi_tracer\.sv$",				# CVA6 TB tracer
+					r"SimDTM\.sv$", r"SimJTAG\.sv$",	# CVA6 TB DPI sim stubs
+					r"/uart\.sv$",						# CVA6 TB uart (we have our own)
+					r"/clint\.sv$",						# CVA6 clint (we use custom_clint)
+					r"axi_lite_interface\.sv$",			# only used by CVA6 clint
+					r"axi_intf\.sv$",					# CVA6 TB AXI interface
+				]
+
+			# Ara flattens extra dead-leaf SRAM/tech-cell alternates into rtl/ that
+			# nothing in the reachable design instantiates but that still must lint.
+			# Several carry a translate_off `automatic`+`ifndef VERILATOR` idiom that
+			# leaves an unbalanced begin/end under Verilator. They are unreachable
+			# (0 instantiations in the unit), so drop them from the cone.
+			if self.CORE_SELECTOR == "CORE_CV64A6_ARA":
+				exclude_patterns += [
+						r"/SyncTpRam\.sv$",				# unused dual-port SRAM (bad pragma)
+						# Dead axi_mem_if BRAM-logger cluster (top = AxiBramLogger, 0
+						# instantiations) importing a non-vendored CfMath package.
+						r"/AxiBramLogger\.sv$",
+						r"/BramLogger\.sv$",
+						r"/BramDwc\.sv$",
+						r"/TdpBramArray\.sv$",
+						# Ara's caches actually reach `tc_sram` (the scalar core never
+						# elaborated it), and the SoC's tc_sram_xilinx variant binds the
+						# Xilinx xpm_memory_spram macro that has no Verilator model. Drop
+						# the xpm variant from the cone so `tc_sram` resolves to the
+						# behavioral tc_sram.sv (drop-in pulp interface) instead.
+						r"/tc_sram_xilinx\.sv$",
+					]
+
+			# CVA6 v5.3.0 vendors its own flat copy of pulp common_cells + pulp-axi +
+			# register_interface, which overlaps by module/package name
+			# (~250 modules) with the copies shipped inside the SoC units
+			# (axi_from_mem/clint/plic/dbg). The two vendored generations are NOT
+			# pin-compatible for the pulp-axi SoC modules (e.g. axi_to_axi_lite
+			# instantiates axi_burst_splitter with .req_t/.resp_t in CVA6's copy but
+			# .axi_req_t/.axi_resp_t in the SoC copy), so a flat namespace breaks on
+			# whichever copy Verilator keeps. The CVA6 *core* (cva6.sv -> caches/fpu/
+			# mmu) only needs its own uniquely-named modules (axi_adapter, axi_shim,
+			# fifo_v3, lzc, rr_arb_tree, ...) plus a few common_cells that are
+			# byte-identical across generations. So: drop every CORE-unit rtl file
+			# whose declared module/package/interface names are ALL also provided by
+			# a non-core unit. This yields the SoC's authoritative copy for shared
+			# names and keeps only CVA6's unique sources. Reachable-but-unique files
+			# (axi_adapter.sv, axi_shim.sv) are untouched.
+			core_rtl = os.path.join(root, "hw", "units", core_unit, "rtl")
+			noncore_rtl = [os.path.join(root, "hw", "units", u, "rtl")
+						   for u in cone_units if u != core_unit]
+			decl_re = re.compile(r"^\s*(?:module|package|interface)\s+(\w+)", re.M)
+
+			def _decls(path):
+				try:
+					return set(decl_re.findall(
+						Path(path).read_text(encoding="utf-8", errors="ignore")))
+				except OSError:
+					return set()
+
+			noncore_names = set()
+			for d in noncore_rtl:
+				for f in os.listdir(d) if os.path.isdir(d) else []:
+					if f.endswith(".sv"):
+						noncore_names |= _decls(os.path.join(d, f))
+
+			if os.path.isdir(core_rtl):
+				for f in sorted(os.listdir(core_rtl)):
+					if not f.endswith(".sv"):
+						continue
+					names = _decls(os.path.join(core_rtl, f))
+					# Drop only if the file declares something AND every declared
+					# top-level name is already provided by a non-core unit.
+					if names and names <= noncore_names:
+						exclude_patterns.append(
+							re.escape(os.path.join(core_rtl, f)) + r"$")
 
 		flist_template = Sim_Flist_Template(
 				defines=defines,

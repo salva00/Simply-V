@@ -14,7 +14,9 @@
 //   xlnx_bram_0 <- +BRAM0_INIT=<verilog hex file>   (used by Verilator TB)
 //   xlnx_bram_1 <- +BRAM1_INIT=<verilog hex file>   (not pre-loaded by default)
 //
-// AXI4 Full slave, 32-bit data, 32-bit address, 4-bit ID.
+// AXI4 Full slave, DW-bit data (32 for 32-bit cores, 64 for cv64a6), 32-bit
+// address, 4-bit ID. DW defaults from `MBUS_DATA_WIDTH (= XLEN) so the shim
+// tracks the MBUS data width; DW=32 reproduces the original byte behavior.
 // Handles one outstanding transaction per direction (sufficient for ibex).
 // NO #-delays (Verilator --no-timing).
 
@@ -23,6 +25,7 @@
 // =============================================================================
 module sim_axi_bram #(
     parameter int          MEM_BYTES  = 65536,    // byte-addressable memory size
+    parameter int          DW         = 32,       // AXI data width (32 or 64)
     parameter string       INIT_PLUSARG = "BRAM0_INIT"  // plusarg name (no leading +)
 ) (
     // Status outputs (tied low — reset not modelled)
@@ -43,8 +46,8 @@ module sim_axi_bram #(
     output logic        s_axi_awready,
 
     // AXI4 write data channel
-    input  logic [31:0] s_axi_wdata,
-    input  logic [3:0]  s_axi_wstrb,
+    input  logic [DW-1:0]   s_axi_wdata,
+    input  logic [DW/8-1:0] s_axi_wstrb,
     input  logic        s_axi_wlast,
     input  logic        s_axi_wvalid,
     output logic        s_axi_wready,
@@ -66,7 +69,7 @@ module sim_axi_bram #(
 
     // AXI4 read data channel
     output logic [3:0]  s_axi_rid,
-    output logic [31:0] s_axi_rdata,
+    output logic [DW-1:0] s_axi_rdata,
     output logic [1:0]  s_axi_rresp,
     output logic        s_axi_rlast,
     output logic        s_axi_rvalid,
@@ -77,6 +80,8 @@ module sim_axi_bram #(
     // Internal memory: MEM_BYTES bytes, byte-addressed
     // -------------------------------------------------------------------------
     localparam int ADDR_BITS = $clog2(MEM_BYTES);
+    localparam int BYTES     = DW/8;            // bytes per beat (4 @32b, 8 @64b)
+    localparam int SHIFT     = $clog2(BYTES);   // address bits to align a beat
 
     logic [7:0] mem [0:MEM_BYTES-1];
 
@@ -99,11 +104,11 @@ module sim_axi_bram #(
     logic [3:0]           wr_id;
     logic [ADDR_BITS-1:0] wr_addr;        // current beat byte address (low ADDR_BITS)
 
-    // ponytail: cores may issue byte addresses (e.g. cv32e40p OBI sends 0xcc1) and
-    // select the byte via be/wstrb. Word-align the base so the lane is picked WITHIN
-    // the aligned word (AXI-conformant). ibex already sends aligned addresses -> no-op.
-    wire [ADDR_BITS-1:0] awaddr_aligned = {s_axi_awaddr[ADDR_BITS-1:2], 2'b00};
-    wire [ADDR_BITS-1:0] araddr_aligned = {s_axi_araddr[ADDR_BITS-1:2], 2'b00};
+    // Cores may issue byte addresses (e.g. cv32e40p OBI sends 0xcc1) and select the
+    // byte via be/wstrb. Beat-align the base so the lane is picked WITHIN the aligned
+    // beat (AXI-conformant). ibex already sends aligned addresses -> no-op.
+    wire [ADDR_BITS-1:0] awaddr_aligned = {s_axi_awaddr[ADDR_BITS-1:SHIFT], {SHIFT{1'b0}}};
+    wire [ADDR_BITS-1:0] araddr_aligned = {s_axi_araddr[ADDR_BITS-1:SHIFT], {SHIFT{1'b0}}};
     logic [7:0]           wr_beats_left;
 
     always_ff @(posedge s_aclk or negedge s_aresetn) begin
@@ -135,12 +140,10 @@ module sim_axi_bram #(
 
                 WR_DATA: begin
                     if (s_axi_wvalid && s_axi_wready) begin
-                        // Apply byte enables (32-bit word, little-endian)
-                        if (s_axi_wstrb[0]) mem[wr_addr + ADDR_BITS'(0)] <= s_axi_wdata[7:0];
-                        if (s_axi_wstrb[1]) mem[wr_addr + ADDR_BITS'(1)] <= s_axi_wdata[15:8];
-                        if (s_axi_wstrb[2]) mem[wr_addr + ADDR_BITS'(2)] <= s_axi_wdata[23:16];
-                        if (s_axi_wstrb[3]) mem[wr_addr + ADDR_BITS'(3)] <= s_axi_wdata[31:24];
-                        wr_addr <= wr_addr + ADDR_BITS'(4);
+                        // Apply byte enables (little-endian, DW/8 lanes)
+                        for (int b = 0; b < BYTES; b++)
+                            if (s_axi_wstrb[b]) mem[wr_addr + ADDR_BITS'(b)] <= s_axi_wdata[8*b +: 8];
+                        wr_addr <= wr_addr + ADDR_BITS'(BYTES);
 
                         if (s_axi_wlast || wr_beats_left == 8'd0) begin
                             s_axi_wready <= 1'b0;
@@ -201,14 +204,12 @@ module sim_axi_bram #(
                         s_axi_arready <= 1'b0;
                         // Present first beat immediately
                         s_axi_rid   <= s_axi_arid;
-                        s_axi_rdata <= {mem[araddr_aligned + ADDR_BITS'(3)],
-                                        mem[araddr_aligned + ADDR_BITS'(2)],
-                                        mem[araddr_aligned + ADDR_BITS'(1)],
-                                        mem[araddr_aligned + ADDR_BITS'(0)]};
+                        for (int b = 0; b < BYTES; b++)
+                            s_axi_rdata[8*b +: 8] <= mem[araddr_aligned + ADDR_BITS'(b)];
                         s_axi_rresp  <= 2'b00; // OKAY
                         s_axi_rlast  <= (s_axi_arlen == 8'd0);
                         s_axi_rvalid <= 1'b1;
-                        rd_addr       <= araddr_aligned + ADDR_BITS'(4);
+                        rd_addr       <= araddr_aligned + ADDR_BITS'(BYTES);
                         rd_state      <= RD_DATA;
                     end
                 end
@@ -225,14 +226,12 @@ module sim_axi_bram #(
                             // Present next beat
                             rd_beats_left <= rd_beats_left - 8'd1;
                             s_axi_rid   <= rd_id;
-                            s_axi_rdata <= {mem[rd_addr + ADDR_BITS'(3)],
-                                            mem[rd_addr + ADDR_BITS'(2)],
-                                            mem[rd_addr + ADDR_BITS'(1)],
-                                            mem[rd_addr + ADDR_BITS'(0)]};
+                            for (int b = 0; b < BYTES; b++)
+                                s_axi_rdata[8*b +: 8] <= mem[rd_addr + ADDR_BITS'(b)];
                             s_axi_rresp  <= 2'b00;
                             s_axi_rlast  <= (rd_beats_left == 8'd1);
                             s_axi_rvalid <= 1'b1;
-                            rd_addr      <= rd_addr + ADDR_BITS'(4);
+                            rd_addr      <= rd_addr + ADDR_BITS'(BYTES);
                         end
                     end
                 end
@@ -249,8 +248,17 @@ endmodule // sim_axi_bram
 // xlnx_bram_0: boot BRAM
 //   MEM_BYTES  = 2^16 = 65536  (from CSV RANGE_ADDR_WIDTH=16 for BRAM_0)
 //   INIT_PLUSARG = "BRAM0_INIT" (+BRAM0_INIT=<hexfile> from the Verilator TB)
+//   DW         = `MBUS_DATA_WIDTH (= XLEN); 32 default reproduces 32-bit behavior.
+//   The generated interconnect instantiates this by name WITHOUT a #(...)
+//   override, so the define default is what sizes the 64-bit ports for cv64a6.
 // =============================================================================
-module xlnx_bram_0 (
+module xlnx_bram_0 #(
+`ifdef MBUS_DATA_WIDTH
+    parameter int DW = `MBUS_DATA_WIDTH
+`else
+    parameter int DW = 32
+`endif
+) (
     output logic        rsta_busy,
     output logic        rstb_busy,
     input  logic        s_aclk,
@@ -262,8 +270,8 @@ module xlnx_bram_0 (
     input  logic [1:0]  s_axi_awburst,
     input  logic        s_axi_awvalid,
     output logic        s_axi_awready,
-    input  logic [31:0] s_axi_wdata,
-    input  logic [3:0]  s_axi_wstrb,
+    input  logic [DW-1:0]   s_axi_wdata,
+    input  logic [DW/8-1:0] s_axi_wstrb,
     input  logic        s_axi_wlast,
     input  logic        s_axi_wvalid,
     output logic        s_axi_wready,
@@ -279,7 +287,7 @@ module xlnx_bram_0 (
     input  logic        s_axi_arvalid,
     output logic        s_axi_arready,
     output logic [3:0]  s_axi_rid,
-    output logic [31:0] s_axi_rdata,
+    output logic [DW-1:0] s_axi_rdata,
     output logic [1:0]  s_axi_rresp,
     output logic        s_axi_rlast,
     output logic        s_axi_rvalid,
@@ -287,6 +295,7 @@ module xlnx_bram_0 (
 );
     sim_axi_bram #(
         .MEM_BYTES   (1 << 16),      // 65536 bytes — from CSV RANGE_ADDR_WIDTH=16
+        .DW          (DW),           // tracks MBUS data width
         .INIT_PLUSARG("BRAM0_INIT")  // +BRAM0_INIT=<hexfile>
     ) u (.*);
 endmodule
@@ -296,8 +305,15 @@ endmodule
 // xlnx_bram_1: main memory BRAM (DMmem)
 //   MEM_BYTES  = 2^16 = 65536  (from CSV RANGE_ADDR_WIDTH=16 for bram_1/DMmem)
 //   INIT_PLUSARG = "BRAM1_INIT" (+BRAM1_INIT=<hexfile>, not pre-loaded by default)
+//   DW         = `MBUS_DATA_WIDTH (= XLEN); 32 default reproduces 32-bit behavior.
 // =============================================================================
-module xlnx_bram_1 (
+module xlnx_bram_1 #(
+`ifdef MBUS_DATA_WIDTH
+    parameter int DW = `MBUS_DATA_WIDTH
+`else
+    parameter int DW = 32
+`endif
+) (
     output logic        rsta_busy,
     output logic        rstb_busy,
     input  logic        s_aclk,
@@ -309,8 +325,8 @@ module xlnx_bram_1 (
     input  logic [1:0]  s_axi_awburst,
     input  logic        s_axi_awvalid,
     output logic        s_axi_awready,
-    input  logic [31:0] s_axi_wdata,
-    input  logic [3:0]  s_axi_wstrb,
+    input  logic [DW-1:0]   s_axi_wdata,
+    input  logic [DW/8-1:0] s_axi_wstrb,
     input  logic        s_axi_wlast,
     input  logic        s_axi_wvalid,
     output logic        s_axi_wready,
@@ -326,7 +342,7 @@ module xlnx_bram_1 (
     input  logic        s_axi_arvalid,
     output logic        s_axi_arready,
     output logic [3:0]  s_axi_rid,
-    output logic [31:0] s_axi_rdata,
+    output logic [DW-1:0] s_axi_rdata,
     output logic [1:0]  s_axi_rresp,
     output logic        s_axi_rlast,
     output logic        s_axi_rvalid,
@@ -334,6 +350,7 @@ module xlnx_bram_1 (
 );
     sim_axi_bram #(
         .MEM_BYTES   (1 << 16),      // 65536 bytes — from CSV RANGE_ADDR_WIDTH=16
+        .DW          (DW),           // tracks MBUS data width
         .INIT_PLUSARG("BRAM1_INIT")  // +BRAM1_INIT=<hexfile>
     ) u (.*);
 endmodule

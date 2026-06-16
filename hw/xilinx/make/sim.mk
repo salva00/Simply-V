@@ -23,11 +23,13 @@ TEST    ?= smoke
 # per-core system CSV is generated in build/ (the user CSV is NEVER edited in
 # place) and config_sim is regenerated from it so the filelist/defines follow
 # the selected core. Firmware is unchanged (rv32im, XLEN=32) across all cores.
-# ponytail: short name -> CORE_SELECTOR via a per-core var, no parser.
+# Short name -> CORE_SELECTOR via a per-core var (no parser).
 CORE ?=
 CORE_SELECTOR_ibex     := CORE_IBEX
 CORE_SELECTOR_cv32e40p := CORE_CV32E40P
 CORE_SELECTOR_picorv32 := CORE_PICORV32
+CORE_SELECTOR_cv64a6     := CORE_CV64A6
+CORE_SELECTOR_cv64a6_ara := CORE_CV64A6_ARA
 # PYTHON override threaded into the config regen (python3.10 may not be on PATH).
 PYTHON ?= python3.10
 
@@ -47,37 +49,51 @@ TEST_STIM_ARG := $(if $(wildcard ${TEST_STIM}),+STIMULUS=${TEST_STIM},)
 
 # Build the example program: the default `all` target produces only .bin/.dump,
 # so the .hex (byte-granular Verilog preload) is requested explicitly.
-# ponytail: interrupts uses real-time periods (~6s sim-time) -> impractical;
-# build it sim-only with -DSIM_FAST (1000x shorter periods, same interrupt counts).
-# Force a clean first so a stale bin (SIM_FAST, picorv32 CSR-skip, or another CORE)
-# is never reused. The FPGA build is unchanged; only the sim-only branches differ.
+# interrupts uses real-time periods (~6s sim-time), impractical; build it sim-only
+# with -DSIM_FAST (1000x shorter periods, same interrupt counts). The bin is forced
+# clean below so a stale one (SIM_FAST, picorv32 CSR-skip, other CORE) is never reused.
+# The FPGA build is unchanged; only the sim-only branches differ.
 TEST_EXTRA_MACROS := $(if $(filter interrupts,${TEST}),-DSIM_FAST,)
-# ponytail: picorv32 lacks standard CSRs AND compressed-ISA support. Build its firmware
-# without the interrupt-CSR setup (GAS --defsym -> startup.s .ifndef) and without the C
-# extension (C_EXTENSION=N -> rv32im, no RVC). The firmware is bare-metal (-nostdlib), so
+# picorv32 lacks standard CSRs and compressed-ISA support. Build its firmware without
+# the interrupt-CSR setup (GAS --defsym -> startup.s .ifndef) and without the C extension
+# (C_EXTENSION=N -> rv32im, no RVC). The firmware is bare-metal (-nostdlib), so
 # C_EXTENSION=N covers the whole image. Other cores: unchanged.
+# The app build defaults C_EXTENSION=Y (RVC, sw/SoC/common/config.mk) but the lib Makefiles
+# default C_EXTENSION=N. Every non-picorv32 run carries C_EXTENSION=Y into TEST_CORE_FW (app
+# and lib rebuild below) so the libs match the RVC app. picorv32 is the only no-RVC core.
 ifeq (${CORE},picorv32)
 TEST_EXTRA_ASFLAGS := -Wa,--defsym,CORE_PICORV32=1
 TEST_CORE_FW       := C_EXTENSION=N
 else
 TEST_EXTRA_ASFLAGS :=
-TEST_CORE_FW       :=
+TEST_CORE_FW       := C_EXTENSION=Y
 endif
-# ponytail: FORCE prereq so this rule runs even when the bin already exists (it has no
-# source prereqs); the conditional clean above decides whether to actually rebuild.
+# 64-bit cores build firmware rv64im/lp64 (riscv64 prefix resolves via settings.sh).
+ifneq ($(filter ${CORE},cv64a6 cv64a6_ara),)
+TEST_XLEN := XLEN=64
+else
+TEST_XLEN :=
+endif
+# lib-XLEN hygiene: the committed tinyio/simplyv .a are rv32; a 64-bit (or no-RVC) run
+# rebuilds them in place, so a following rv32 run would link rv64 libs against rv32 objects
+# and FAIL. Rebuild the libs to match THIS run's flags on every run, so any back-to-back
+# core order is safe. picorv32 -> rv32 no-RVC; 64-bit -> rv64; else -> default.
+TEST_LIB_FLAGS := ${TEST_CORE_FW} ${TEST_XLEN}
+# FORCE prereq so this rule runs even when the bin already exists (no source prereqs).
+# Everything below is rebuilt clean to THIS run's flags so a prior core/XLEN/RVC run can
+# never leave a mismatched artifact behind (order-independent CI).
 ${TEST_HEX} ${TEST_BIN}: FORCE
-ifneq (${TEST_EXTRA_MACROS}${TEST_EXTRA_ASFLAGS}${CORE},)
+	# Clean the example unconditionally: a prior 64-bit run leaves an rv64 .elf/.hex
+	# (uses `sd` etc.) that an rv32 core can't execute. Rebuild it every run.
 	${MAKE} -C ${TEST_PROG_DIR} clean
-endif
-ifeq (${CORE},picorv32)
-	# ponytail: committed tinyio.a/libsimplyv.a are RVC; rebuild them no-RVC for picorv32
-	# (no-RVC libs are rv32im, runnable by every core). Not committed (build artifacts).
+	# Same hygiene for the static libs: rebuild to this run's XLEN/C_EXTENSION (clean
+	# first) so a prior 64-bit/no-RVC run leaves no mismatched .a. Default run (no flags)
+	# reproduces the committed rv32 RVC libs.
 	${MAKE} -C ${SIMPLYV_ROOT_DIR}/sw/SoC/lib/tinyio  clean
-	${MAKE} -C ${SIMPLYV_ROOT_DIR}/sw/SoC/lib/tinyio  C_EXTENSION=N
+	${MAKE} -C ${SIMPLYV_ROOT_DIR}/sw/SoC/lib/tinyio  ${TEST_LIB_FLAGS}
 	${MAKE} -C ${SIMPLYV_ROOT_DIR}/sw/SoC/lib/simplyv clean
-	${MAKE} -C ${SIMPLYV_ROOT_DIR}/sw/SoC/lib/simplyv C_EXTENSION=N
-endif
-	${MAKE} -C ${TEST_PROG_DIR} bin/${TEST}.hex bin/${TEST}.bin PROGRAM_NAME=${TEST} EXTRA_MACROS=${TEST_EXTRA_MACROS} EXTRA_ASFLAGS=${TEST_EXTRA_ASFLAGS} ${TEST_CORE_FW}
+	${MAKE} -C ${SIMPLYV_ROOT_DIR}/sw/SoC/lib/simplyv ${TEST_LIB_FLAGS}
+	${MAKE} -C ${TEST_PROG_DIR} bin/${TEST}.hex bin/${TEST}.bin PROGRAM_NAME=${TEST} EXTRA_MACROS=${TEST_EXTRA_MACROS} EXTRA_ASFLAGS=${TEST_EXTRA_ASFLAGS} ${TEST_CORE_FW} ${TEST_XLEN}
 
 FORCE:
 .PHONY: FORCE
@@ -206,10 +222,10 @@ sim_xsim_smoke:
 VL_EMB_DIR      := ${XILINX_SIM_BUILD_DIR}/verilator/embedded
 VL_EMB_FLIST    := ${XILINX_SIM_GENERATED_ROOT}/verilator_embedded.f
 
-# ponytail: temp per-core system CSV so the user's config_system.csv is untouched.
-# Only built when CORE is non-empty; sim_config_core then regenerates config_sim
-# from it (filelist/defines follow the selected core). picorv32 also needs
-# VIO_RESETN_DEFAULT=0 (sys_parser.py:40 rejects picorv32 with VIO_RESETN!=0).
+# Temp per-core system CSV so the user's config_system.csv is untouched. Only built
+# when CORE is non-empty; sim_config_core then regenerates config_sim from it
+# (filelist/defines follow the selected core). picorv32 also needs VIO_RESETN_DEFAULT=0
+# (sys_parser.py:40 rejects picorv32 with VIO_RESETN!=0).
 CORE_CSV         := ${XILINX_SIM_BUILD_DIR}/config_system_${CORE}.csv
 USER_SYSTEM_CSV  := ${CONFIG_ROOT}/configs/common/config_system.csv
 SIM_CORE_DEP     := $(if ${CORE},sim_config_core,)
@@ -222,13 +238,20 @@ sim_config_core:
 	if [ "${CORE}" = picorv32 ]; then \
 	    sed -i 's/^VIO_RESETN_DEFAULT,.*/VIO_RESETN_DEFAULT,0/' ${CORE_CSV}; \
 	fi
+	# 64-bit cores must carry XLEN=64 (sys_parser rejects mismatches).
+	case "${CORE}" in cv64a6|cv64a6_ara) \
+	    sed -i 's/^XLEN,.*/XLEN,64/' ${CORE_CSV};; esac
 	${MAKE} -C ${CONFIG_ROOT} config_sim PYTHON=${PYTHON} INPUT_SYSTEM_CSV=${CORE_CSV}
 
 .PHONY: sim_config_core
 
-# Elaboration-only gate: catches port drift between shims and RTL
+# Elaboration-only gate: catches port drift between shims and RTL.
+# -Wno-ENUMVALUE: Ara's lane_sequencer assigns packed logic into enum-typed struct
+# members (an idiom upstream Ara suppresses); harmless. -fno-dfg: Ara's simd_mul trips
+# a Verilator V3DfgSynthesize internal error ("Different default drivers"); disabling the
+# DFG pass dodges the compiler bug (sim-perf only). Both are no-ops for the non-Ara cores.
 sim_elab_embedded:
-	${VERILATOR} --lint-only -sv -Wno-fatal --no-timing --top-module simplyv \
+	${VERILATOR} --lint-only -sv -Wno-fatal -Wno-ENUMVALUE -fno-dfg --no-timing --top-module simplyv \
 		-f ${VL_EMB_FLIST}
 
 .PHONY: sim_elab_embedded
@@ -246,7 +269,7 @@ VL_EMB_GOLDEN := ${TEST_GOLDEN}
 # ${TEST_HEX} is a prerequisite so the example program is built on demand.
 sim_verilator_embedded: ${SIM_CORE_DEP} ${TEST_HEX}
 	mkdir -p ${VL_EMB_DIR}
-	${VERILATOR} -cc --exe --build -j 0 -sv -Wno-fatal --no-timing \
+	${VERILATOR} -cc --exe --build -j 0 -sv -Wno-fatal -Wno-ENUMVALUE -fno-dfg --no-timing \
 		--top-module simplyv \
 		+define+SIM_UART_CYCLES_PER_BIT=${SIM_UART_CYCLES_PER_BIT} \
 		-Mdir ${VL_EMB_DIR} \

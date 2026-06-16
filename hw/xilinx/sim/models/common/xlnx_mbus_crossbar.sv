@@ -38,11 +38,33 @@
 `include "axi/typedef.svh"
 
 module xlnx_mbus_crossbar #(
+    // simplyv.sv instantiates this shim WITHOUT a param override (the real Xilinx
+    // crossbar IP has its width baked in at generation). Default to the configured
+    // MBUS geometry via the sim defines so 64-bit cores (cv64a6) get a 64-bit data
+    // path instead of the legacy 32-bit default (which silently truncated MBUS read
+    // data to zero). 32-bit cores set MBUS_DATA_WIDTH=32 -> unchanged. Same
+    // single-source-of-truth `define the BRAM shim uses.
+`ifdef MBUS_DATA_WIDTH
+    parameter int unsigned LOCAL_DATA_WIDTH = `MBUS_DATA_WIDTH,
+`else
     parameter int unsigned LOCAL_DATA_WIDTH = 32,
+`endif
     parameter int unsigned LOCAL_ADDR_WIDTH = 32,
+`ifdef MBUS_ID_WIDTH
+    parameter int unsigned LOCAL_ID_WIDTH   = `MBUS_ID_WIDTH,   // MBUS slave-port id width
+`else
     parameter int unsigned LOCAL_ID_WIDTH   = 5,   // MBUS slave-port id width
+`endif
+`ifdef MBUS_NUM_SI
+    parameter int unsigned NUM_SI           = `MBUS_NUM_SI,   // MBUS masters (xbar slave ports)
+`else
     parameter int unsigned NUM_SI           = 5,   // MBUS masters (xbar slave ports)
+`endif
+`ifdef MBUS_NUM_MI
+    parameter int unsigned NUM_MI           = `MBUS_NUM_MI,   // MBUS slaves  (xbar master ports)
+`else
     parameter int unsigned NUM_MI           = 6,   // MBUS slaves  (xbar master ports)
+`endif
     localparam int unsigned LOCAL_STRB_WIDTH = LOCAL_DATA_WIDTH / 8
 ) (
     input logic aclk,

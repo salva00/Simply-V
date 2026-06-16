@@ -11,3 +11,7 @@ build*/
 tmp*
 backup*
 *.log
+handoff.md
+
+# CVA6 RVFI trace dumps (cv64a6 sim)
+*.dasm

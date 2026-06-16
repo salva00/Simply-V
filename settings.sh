@@ -135,6 +135,11 @@ export SW_ROOT=${SIMPLYV_ROOT_DIR}/sw
 export SW_HOST_ROOT=${SIMPLYV_ROOT_DIR}/sw/host
 export SW_SOC_ROOT=${SIMPLYV_ROOT_DIR}/sw/SoC
 
+# RISC-V toolchains on PATH (firmware picks the binary by RV_PREFIX=riscv${XLEN}-unknown-elf-)
+# Flat export, riscv32 first (cosmetic order; selection is by exact prefix)
+export PATH=/home/salvatore/tools/riscv/bin:$PATH            # riscv64 (XLEN=64 cores: cv64a6) — multilib lp64
+export PATH=/home/salvatore/tools/risc-v-unknown/bin:$PATH   # riscv32 (XLEN=32 cores) — multilib ilp32
+
 ########
 # Dump #
 ########

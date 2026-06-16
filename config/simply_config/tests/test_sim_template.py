@@ -118,6 +118,26 @@ def test_sim_cone_units_per_core():
     assert "custom_rv32_dbg_bscane" not in cone["CORE_PICORV32"]
 
 
+def test_sim_cone_units_cv64a6():
+    from general.simplyv import SimplyV
+    cone = SimplyV.SIM_CONE_UNITS
+    assert "CORE_CV64A6" in cone
+    assert "custom_cv64a6" in cone["CORE_CV64A6"]
+    assert "custom_rv64_dbg_bscane" in cone["CORE_CV64A6"]   # 64-bit debug, not rv32
+    assert "custom_rv32_dbg_bscane" not in cone["CORE_CV64A6"]
+    assert "custom_clint" in cone["CORE_CV64A6"]
+    assert "custom_rv_plic" in cone["CORE_CV64A6"]
+
+
+def test_sim_cone_units_cv64a6_ara():
+    from general.simplyv import SimplyV
+    cone = SimplyV.SIM_CONE_UNITS
+    assert "CORE_CV64A6_ARA" in cone
+    assert "custom_cv64a6_ara" in cone["CORE_CV64A6_ARA"]
+    assert "custom_rv64_dbg_bscane" in cone["CORE_CV64A6_ARA"]
+    assert "custom_rv32_dbg_bscane" not in cone["CORE_CV64A6_ARA"]
+
+
 def test_real_nonleafbus_names_align_with_ranges():
     # Exercise the REAL NonLeafBus methods (not fakes). The full constructor
     # needs CSV-driven dicts and singletons, so build a skeleton and set only

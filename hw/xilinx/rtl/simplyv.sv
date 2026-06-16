@@ -885,50 +885,148 @@ module simplyv (
     // AXI-Lite bus from adapter to CDMA control interface
     `DECLARE_AXILITE_BUS(AXILITE_to_CDMA, 32, 32)
 
+    // The CDMA control port (via xlnx_axi4_to_axilite_d32_converter) is a 32-bit
+    // AXI4 slave, but MBUS_to_CDMA carries the MBUS data width (64 on cv64a6).
+    // Unlike PBUS/CLINT/PLIC, the CDMA path has no dwidth converter, so on 64-bit
+    // cores the upper/lower-lane wdata/rdata do not line up and the control regs
+    // read back zero. Mirror the peripheral pattern: downsize 64->32 when MBUS is
+    // 64-bit, passthrough when it is already 32-bit.
+    `DECLARE_AXI_BUS(MBUS_to_CDMA_d32, 32, MBUS_ADDR_WIDTH, MBUS_ID_WIDTH)
+
+    // 32-bit master side of the CDMA, widened to the MBUS data width by the
+    // upsizer below (see the AXI CDMA master wiring further down).
+    `DECLARE_AXI_BUS(CDMA_to_MBUS_m32, 32, MBUS_ADDR_WIDTH, MBUS_ID_WIDTH)
+
+    if ( MBUS_DATA_WIDTH == 64 ) begin : gen_cdma_dwidth_conv
+        xlnx_axi_dwidth_64_to_32_converter cdma_dwidth_conv_u (
+            .s_axi_aclk     ( CDMA_clk    ),
+            .s_axi_aresetn  ( CDMA_rstn   ),
+            // 64-bit slave from MBUS
+            .s_axi_awid     ( MBUS_to_CDMA_axi_awid     ),
+            .s_axi_awaddr   ( MBUS_to_CDMA_axi_awaddr   ),
+            .s_axi_awlen    ( MBUS_to_CDMA_axi_awlen    ),
+            .s_axi_awsize   ( MBUS_to_CDMA_axi_awsize   ),
+            .s_axi_awburst  ( MBUS_to_CDMA_axi_awburst  ),
+            .s_axi_awlock   ( MBUS_to_CDMA_axi_awlock   ),
+            .s_axi_awcache  ( MBUS_to_CDMA_axi_awcache  ),
+            .s_axi_awprot   ( MBUS_to_CDMA_axi_awprot   ),
+            .s_axi_awqos    ( MBUS_to_CDMA_axi_awqos    ),
+            .s_axi_awregion ( MBUS_to_CDMA_axi_awregion ),
+            .s_axi_awvalid  ( MBUS_to_CDMA_axi_awvalid  ),
+            .s_axi_awready  ( MBUS_to_CDMA_axi_awready  ),
+            .s_axi_wdata    ( MBUS_to_CDMA_axi_wdata    ),
+            .s_axi_wstrb    ( MBUS_to_CDMA_axi_wstrb    ),
+            .s_axi_wlast    ( MBUS_to_CDMA_axi_wlast    ),
+            .s_axi_wvalid   ( MBUS_to_CDMA_axi_wvalid   ),
+            .s_axi_wready   ( MBUS_to_CDMA_axi_wready   ),
+            .s_axi_bid      ( MBUS_to_CDMA_axi_bid      ),
+            .s_axi_bresp    ( MBUS_to_CDMA_axi_bresp    ),
+            .s_axi_bvalid   ( MBUS_to_CDMA_axi_bvalid   ),
+            .s_axi_bready   ( MBUS_to_CDMA_axi_bready   ),
+            .s_axi_arid     ( MBUS_to_CDMA_axi_arid     ),
+            .s_axi_araddr   ( MBUS_to_CDMA_axi_araddr   ),
+            .s_axi_arlen    ( MBUS_to_CDMA_axi_arlen    ),
+            .s_axi_arsize   ( MBUS_to_CDMA_axi_arsize   ),
+            .s_axi_arburst  ( MBUS_to_CDMA_axi_arburst  ),
+            .s_axi_arlock   ( MBUS_to_CDMA_axi_arlock   ),
+            .s_axi_arcache  ( MBUS_to_CDMA_axi_arcache  ),
+            .s_axi_arprot   ( MBUS_to_CDMA_axi_arprot   ),
+            .s_axi_arqos    ( MBUS_to_CDMA_axi_arqos    ),
+            .s_axi_arregion ( MBUS_to_CDMA_axi_arregion ),
+            .s_axi_arvalid  ( MBUS_to_CDMA_axi_arvalid  ),
+            .s_axi_arready  ( MBUS_to_CDMA_axi_arready  ),
+            .s_axi_rid      ( MBUS_to_CDMA_axi_rid      ),
+            .s_axi_rdata    ( MBUS_to_CDMA_axi_rdata    ),
+            .s_axi_rresp    ( MBUS_to_CDMA_axi_rresp    ),
+            .s_axi_rlast    ( MBUS_to_CDMA_axi_rlast    ),
+            .s_axi_rvalid   ( MBUS_to_CDMA_axi_rvalid   ),
+            .s_axi_rready   ( MBUS_to_CDMA_axi_rready   ),
+            // 32-bit master to the AXI-Lite adapter (no IDs on master port)
+            .m_axi_awaddr   ( MBUS_to_CDMA_d32_axi_awaddr   ),
+            .m_axi_awlen    ( MBUS_to_CDMA_d32_axi_awlen    ),
+            .m_axi_awsize   ( MBUS_to_CDMA_d32_axi_awsize   ),
+            .m_axi_awburst  ( MBUS_to_CDMA_d32_axi_awburst  ),
+            .m_axi_awlock   ( MBUS_to_CDMA_d32_axi_awlock   ),
+            .m_axi_awcache  ( MBUS_to_CDMA_d32_axi_awcache  ),
+            .m_axi_awprot   ( MBUS_to_CDMA_d32_axi_awprot   ),
+            .m_axi_awqos    ( MBUS_to_CDMA_d32_axi_awqos    ),
+            .m_axi_awregion ( MBUS_to_CDMA_d32_axi_awregion ),
+            .m_axi_awvalid  ( MBUS_to_CDMA_d32_axi_awvalid  ),
+            .m_axi_awready  ( MBUS_to_CDMA_d32_axi_awready  ),
+            .m_axi_wdata    ( MBUS_to_CDMA_d32_axi_wdata    ),
+            .m_axi_wstrb    ( MBUS_to_CDMA_d32_axi_wstrb    ),
+            .m_axi_wlast    ( MBUS_to_CDMA_d32_axi_wlast    ),
+            .m_axi_wvalid   ( MBUS_to_CDMA_d32_axi_wvalid   ),
+            .m_axi_wready   ( MBUS_to_CDMA_d32_axi_wready   ),
+            .m_axi_bresp    ( MBUS_to_CDMA_d32_axi_bresp    ),
+            .m_axi_bvalid   ( MBUS_to_CDMA_d32_axi_bvalid   ),
+            .m_axi_bready   ( MBUS_to_CDMA_d32_axi_bready   ),
+            .m_axi_araddr   ( MBUS_to_CDMA_d32_axi_araddr   ),
+            .m_axi_arlen    ( MBUS_to_CDMA_d32_axi_arlen    ),
+            .m_axi_arsize   ( MBUS_to_CDMA_d32_axi_arsize   ),
+            .m_axi_arburst  ( MBUS_to_CDMA_d32_axi_arburst  ),
+            .m_axi_arlock   ( MBUS_to_CDMA_d32_axi_arlock   ),
+            .m_axi_arcache  ( MBUS_to_CDMA_d32_axi_arcache  ),
+            .m_axi_arprot   ( MBUS_to_CDMA_d32_axi_arprot   ),
+            .m_axi_arqos    ( MBUS_to_CDMA_d32_axi_arqos    ),
+            .m_axi_arregion ( MBUS_to_CDMA_d32_axi_arregion ),
+            .m_axi_arvalid  ( MBUS_to_CDMA_d32_axi_arvalid  ),
+            .m_axi_arready  ( MBUS_to_CDMA_d32_axi_arready  ),
+            .m_axi_rdata    ( MBUS_to_CDMA_d32_axi_rdata    ),
+            .m_axi_rresp    ( MBUS_to_CDMA_d32_axi_rresp    ),
+            .m_axi_rlast    ( MBUS_to_CDMA_d32_axi_rlast    ),
+            .m_axi_rvalid   ( MBUS_to_CDMA_d32_axi_rvalid   ),
+            .m_axi_rready   ( MBUS_to_CDMA_d32_axi_rready   )
+        );
+    end else begin : gen_cdma_passthrough
+        // 32-bit MBUS (e.g. ibex): wire straight through.
+        `ASSIGN_AXI_BUS(MBUS_to_CDMA_d32, MBUS_to_CDMA)
+    end
+
     // AXI-lite converter
     xlnx_axi4_to_axilite_d32_converter axi4_to_axilite_cdma_u (
         .aclk           ( CDMA_clk    ),
         .aresetn        ( CDMA_rstn   ),
-        // AXI4 slave (from MBUS)
-        .s_axi_awid     ( MBUS_to_CDMA_axi_awid           ),
-        .s_axi_awaddr   ( MBUS_to_CDMA_axi_awaddr         ),
-        .s_axi_awlen    ( MBUS_to_CDMA_axi_awlen          ),
-        .s_axi_awsize   ( MBUS_to_CDMA_axi_awsize         ),
-        .s_axi_awburst  ( MBUS_to_CDMA_axi_awburst        ),
-        .s_axi_awlock   ( MBUS_to_CDMA_axi_awlock         ),
-        .s_axi_awcache  ( MBUS_to_CDMA_axi_awcache        ),
-        .s_axi_awprot   ( MBUS_to_CDMA_axi_awprot         ),
-        .s_axi_awregion ( MBUS_to_CDMA_axi_awregion       ),
-        .s_axi_awqos    ( MBUS_to_CDMA_axi_awqos          ),
-        .s_axi_awvalid  ( MBUS_to_CDMA_axi_awvalid        ),
-        .s_axi_awready  ( MBUS_to_CDMA_axi_awready        ),
-        .s_axi_wdata    ( MBUS_to_CDMA_axi_wdata          ),
-        .s_axi_wstrb    ( MBUS_to_CDMA_axi_wstrb          ),
-        .s_axi_wlast    ( MBUS_to_CDMA_axi_wlast          ),
-        .s_axi_wvalid   ( MBUS_to_CDMA_axi_wvalid         ),
-        .s_axi_wready   ( MBUS_to_CDMA_axi_wready         ),
-        .s_axi_bid      ( MBUS_to_CDMA_axi_bid            ),
-        .s_axi_bresp    ( MBUS_to_CDMA_axi_bresp          ),
-        .s_axi_bvalid   ( MBUS_to_CDMA_axi_bvalid         ),
-        .s_axi_bready   ( MBUS_to_CDMA_axi_bready         ),
-        .s_axi_arid     ( MBUS_to_CDMA_axi_arid           ),
-        .s_axi_araddr   ( MBUS_to_CDMA_axi_araddr         ),
-        .s_axi_arlen    ( MBUS_to_CDMA_axi_arlen          ),
-        .s_axi_arsize   ( MBUS_to_CDMA_axi_arsize         ),
-        .s_axi_arburst  ( MBUS_to_CDMA_axi_arburst        ),
-        .s_axi_arlock   ( MBUS_to_CDMA_axi_arlock         ),
-        .s_axi_arcache  ( MBUS_to_CDMA_axi_arcache        ),
-        .s_axi_arprot   ( MBUS_to_CDMA_axi_arprot         ),
-        .s_axi_arregion ( MBUS_to_CDMA_axi_arregion       ),
-        .s_axi_arqos    ( MBUS_to_CDMA_axi_arqos          ),
-        .s_axi_arvalid  ( MBUS_to_CDMA_axi_arvalid        ),
-        .s_axi_arready  ( MBUS_to_CDMA_axi_arready        ),
-        .s_axi_rid      ( MBUS_to_CDMA_axi_rid            ),
-        .s_axi_rdata    ( MBUS_to_CDMA_axi_rdata          ),
-        .s_axi_rresp    ( MBUS_to_CDMA_axi_rresp          ),
-        .s_axi_rlast    ( MBUS_to_CDMA_axi_rlast          ),
-        .s_axi_rvalid   ( MBUS_to_CDMA_axi_rvalid         ),
-        .s_axi_rready   ( MBUS_to_CDMA_axi_rready         ),
+        // AXI4 slave (32-bit, from the dwidth converter / passthrough)
+        .s_axi_awid     ( MBUS_to_CDMA_d32_axi_awid           ),
+        .s_axi_awaddr   ( MBUS_to_CDMA_d32_axi_awaddr         ),
+        .s_axi_awlen    ( MBUS_to_CDMA_d32_axi_awlen          ),
+        .s_axi_awsize   ( MBUS_to_CDMA_d32_axi_awsize         ),
+        .s_axi_awburst  ( MBUS_to_CDMA_d32_axi_awburst        ),
+        .s_axi_awlock   ( MBUS_to_CDMA_d32_axi_awlock         ),
+        .s_axi_awcache  ( MBUS_to_CDMA_d32_axi_awcache        ),
+        .s_axi_awprot   ( MBUS_to_CDMA_d32_axi_awprot         ),
+        .s_axi_awregion ( MBUS_to_CDMA_d32_axi_awregion       ),
+        .s_axi_awqos    ( MBUS_to_CDMA_d32_axi_awqos          ),
+        .s_axi_awvalid  ( MBUS_to_CDMA_d32_axi_awvalid        ),
+        .s_axi_awready  ( MBUS_to_CDMA_d32_axi_awready        ),
+        .s_axi_wdata    ( MBUS_to_CDMA_d32_axi_wdata          ),
+        .s_axi_wstrb    ( MBUS_to_CDMA_d32_axi_wstrb          ),
+        .s_axi_wlast    ( MBUS_to_CDMA_d32_axi_wlast          ),
+        .s_axi_wvalid   ( MBUS_to_CDMA_d32_axi_wvalid         ),
+        .s_axi_wready   ( MBUS_to_CDMA_d32_axi_wready         ),
+        .s_axi_bid      ( MBUS_to_CDMA_d32_axi_bid            ),
+        .s_axi_bresp    ( MBUS_to_CDMA_d32_axi_bresp          ),
+        .s_axi_bvalid   ( MBUS_to_CDMA_d32_axi_bvalid         ),
+        .s_axi_bready   ( MBUS_to_CDMA_d32_axi_bready         ),
+        .s_axi_arid     ( MBUS_to_CDMA_d32_axi_arid           ),
+        .s_axi_araddr   ( MBUS_to_CDMA_d32_axi_araddr         ),
+        .s_axi_arlen    ( MBUS_to_CDMA_d32_axi_arlen          ),
+        .s_axi_arsize   ( MBUS_to_CDMA_d32_axi_arsize         ),
+        .s_axi_arburst  ( MBUS_to_CDMA_d32_axi_arburst        ),
+        .s_axi_arlock   ( MBUS_to_CDMA_d32_axi_arlock         ),
+        .s_axi_arcache  ( MBUS_to_CDMA_d32_axi_arcache        ),
+        .s_axi_arprot   ( MBUS_to_CDMA_d32_axi_arprot         ),
+        .s_axi_arregion ( MBUS_to_CDMA_d32_axi_arregion       ),
+        .s_axi_arqos    ( MBUS_to_CDMA_d32_axi_arqos          ),
+        .s_axi_arvalid  ( MBUS_to_CDMA_d32_axi_arvalid        ),
+        .s_axi_arready  ( MBUS_to_CDMA_d32_axi_arready        ),
+        .s_axi_rid      ( MBUS_to_CDMA_d32_axi_rid            ),
+        .s_axi_rdata    ( MBUS_to_CDMA_d32_axi_rdata          ),
+        .s_axi_rresp    ( MBUS_to_CDMA_d32_axi_rresp          ),
+        .s_axi_rlast    ( MBUS_to_CDMA_d32_axi_rlast          ),
+        .s_axi_rvalid   ( MBUS_to_CDMA_d32_axi_rvalid         ),
+        .s_axi_rready   ( MBUS_to_CDMA_d32_axi_rready         ),
         // AXI4-Lite master (to CDMA control interface)
         .m_axi_awaddr   ( AXILITE_to_CDMA_axilite_awaddr  ),
         .m_axi_awprot   ( AXILITE_to_CDMA_axilite_awprot  ),
@@ -950,16 +1048,6 @@ module simplyv (
         .m_axi_rvalid   ( AXILITE_to_CDMA_axilite_rvalid  ),
         .m_axi_rready   ( AXILITE_to_CDMA_axilite_rready  )
     );
-
-    // Tie-off unused signals
-    assign CDMA_to_MBUS_axi_awid   = '0;
-    assign CDMA_to_MBUS_axi_awlock = '0;
-    assign CDMA_to_MBUS_axi_awqos  = '0;
-    assign CDMA_to_MBUS_axi_arid   = '0;
-    assign CDMA_to_MBUS_axi_arlock = '0;
-    assign CDMA_to_MBUS_axi_arqos  = '0;
-    assign CDMA_to_MBUS_axi_awregion   = '0;
-    assign CDMA_to_MBUS_axi_arregion   = '0;
 
     // AXI CDMA
     xlnx_axi_cdma cdma_u (
@@ -989,39 +1077,146 @@ module simplyv (
         .s_axi_lite_rready  ( AXILITE_to_CDMA_axilite_rready      ),
         .s_axi_lite_rdata   ( AXILITE_to_CDMA_axilite_rdata       ),
         .s_axi_lite_rresp   ( AXILITE_to_CDMA_axilite_rresp       ),
-        // AXI4 Master
-        .m_axi_awaddr       ( CDMA_to_MBUS_axi_awaddr             ),
-        .m_axi_awlen        ( CDMA_to_MBUS_axi_awlen              ),
-        .m_axi_awsize       ( CDMA_to_MBUS_axi_awsize             ),
-        .m_axi_awburst      ( CDMA_to_MBUS_axi_awburst            ),
-        .m_axi_awprot       ( CDMA_to_MBUS_axi_awprot             ),
-        .m_axi_awcache      ( CDMA_to_MBUS_axi_awcache            ),
-        .m_axi_awvalid      ( CDMA_to_MBUS_axi_awvalid            ),
-        .m_axi_awready      ( CDMA_to_MBUS_axi_awready            ),
-        .m_axi_wdata        ( CDMA_to_MBUS_axi_wdata              ),
-        .m_axi_wstrb        ( CDMA_to_MBUS_axi_wstrb              ),
-        .m_axi_wlast        ( CDMA_to_MBUS_axi_wlast              ),
-        .m_axi_wvalid       ( CDMA_to_MBUS_axi_wvalid             ),
-        .m_axi_wready       ( CDMA_to_MBUS_axi_wready             ),
-        .m_axi_bvalid       ( CDMA_to_MBUS_axi_bvalid             ),
-        .m_axi_bready       ( CDMA_to_MBUS_axi_bready             ),
-        .m_axi_bresp        ( CDMA_to_MBUS_axi_bresp              ),
-        .m_axi_araddr       ( CDMA_to_MBUS_axi_araddr             ),
-        .m_axi_arlen        ( CDMA_to_MBUS_axi_arlen              ),
-        .m_axi_arsize       ( CDMA_to_MBUS_axi_arsize             ),
-        .m_axi_arburst      ( CDMA_to_MBUS_axi_arburst            ),
-        .m_axi_arprot       ( CDMA_to_MBUS_axi_arprot             ),
-        .m_axi_arcache      ( CDMA_to_MBUS_axi_arcache            ),
-        .m_axi_arvalid      ( CDMA_to_MBUS_axi_arvalid            ),
-        .m_axi_arready      ( CDMA_to_MBUS_axi_arready            ),
-        .m_axi_rdata        ( CDMA_to_MBUS_axi_rdata              ),
-        .m_axi_rresp        ( CDMA_to_MBUS_axi_rresp              ),
-        .m_axi_rlast        ( CDMA_to_MBUS_axi_rlast              ),
-        .m_axi_rvalid       ( CDMA_to_MBUS_axi_rvalid             ),
-        .m_axi_rready       ( CDMA_to_MBUS_axi_rready             ),
+        // AXI4 Master (32-bit; an upsizer below widens it to the MBUS width)
+        .m_axi_awaddr       ( CDMA_to_MBUS_m32_axi_awaddr         ),
+        .m_axi_awlen        ( CDMA_to_MBUS_m32_axi_awlen          ),
+        .m_axi_awsize       ( CDMA_to_MBUS_m32_axi_awsize         ),
+        .m_axi_awburst      ( CDMA_to_MBUS_m32_axi_awburst        ),
+        .m_axi_awprot       ( CDMA_to_MBUS_m32_axi_awprot         ),
+        .m_axi_awcache      ( CDMA_to_MBUS_m32_axi_awcache        ),
+        .m_axi_awvalid      ( CDMA_to_MBUS_m32_axi_awvalid        ),
+        .m_axi_awready      ( CDMA_to_MBUS_m32_axi_awready        ),
+        .m_axi_wdata        ( CDMA_to_MBUS_m32_axi_wdata          ),
+        .m_axi_wstrb        ( CDMA_to_MBUS_m32_axi_wstrb          ),
+        .m_axi_wlast        ( CDMA_to_MBUS_m32_axi_wlast          ),
+        .m_axi_wvalid       ( CDMA_to_MBUS_m32_axi_wvalid         ),
+        .m_axi_wready       ( CDMA_to_MBUS_m32_axi_wready         ),
+        .m_axi_bvalid       ( CDMA_to_MBUS_m32_axi_bvalid         ),
+        .m_axi_bready       ( CDMA_to_MBUS_m32_axi_bready         ),
+        .m_axi_bresp        ( CDMA_to_MBUS_m32_axi_bresp          ),
+        .m_axi_araddr       ( CDMA_to_MBUS_m32_axi_araddr         ),
+        .m_axi_arlen        ( CDMA_to_MBUS_m32_axi_arlen          ),
+        .m_axi_arsize       ( CDMA_to_MBUS_m32_axi_arsize         ),
+        .m_axi_arburst      ( CDMA_to_MBUS_m32_axi_arburst        ),
+        .m_axi_arprot       ( CDMA_to_MBUS_m32_axi_arprot         ),
+        .m_axi_arcache      ( CDMA_to_MBUS_m32_axi_arcache        ),
+        .m_axi_arvalid      ( CDMA_to_MBUS_m32_axi_arvalid        ),
+        .m_axi_arready      ( CDMA_to_MBUS_m32_axi_arready        ),
+        .m_axi_rdata        ( CDMA_to_MBUS_m32_axi_rdata          ),
+        .m_axi_rresp        ( CDMA_to_MBUS_m32_axi_rresp          ),
+        .m_axi_rlast        ( CDMA_to_MBUS_m32_axi_rlast          ),
+        .m_axi_rvalid       ( CDMA_to_MBUS_m32_axi_rvalid         ),
+        .m_axi_rready       ( CDMA_to_MBUS_m32_axi_rready         ),
         // Scatter-Gather interface not used
         .cdma_tvect_out ()
     );
+
+    // The CDMA master is a 32-bit AXI4 port, but CDMA_to_MBUS carries the MBUS
+    // data width (64 on cv64a6). Without an upsizer every odd-word (addr[2]=1)
+    // beat lands in the wrong 64-bit lane, so half the copied words are dropped.
+    // Mirror the debug path: upsize 32->64 when MBUS is 64-bit, passthrough when
+    // it is already 32-bit.
+    if ( MBUS_DATA_WIDTH == 64 ) begin : gen_cdma_upsizer
+        // The upsizer slave carries IDs/lock/qos/region the CDMA master omits;
+        // tie them off (single-outstanding, fixed-INCR engine).
+        assign CDMA_to_MBUS_m32_axi_awid     = '0;
+        assign CDMA_to_MBUS_m32_axi_awlock   = '0;
+        assign CDMA_to_MBUS_m32_axi_awqos    = '0;
+        assign CDMA_to_MBUS_m32_axi_awregion = '0;
+        assign CDMA_to_MBUS_m32_axi_arid     = '0;
+        assign CDMA_to_MBUS_m32_axi_arlock   = '0;
+        assign CDMA_to_MBUS_m32_axi_arqos    = '0;
+        assign CDMA_to_MBUS_m32_axi_arregion = '0;
+
+        xlnx_axi_dwidth_32_to_64_converter cdma_upsizer_u (
+            .s_axi_aclk     ( MBUS_clk    ),
+            .s_axi_aresetn  ( MBUS_rstn   ),
+            // 32-bit slave from the CDMA master
+            .s_axi_awid     ( CDMA_to_MBUS_m32_axi_awid     ),
+            .s_axi_awaddr   ( CDMA_to_MBUS_m32_axi_awaddr   ),
+            .s_axi_awlen    ( CDMA_to_MBUS_m32_axi_awlen    ),
+            .s_axi_awsize   ( CDMA_to_MBUS_m32_axi_awsize   ),
+            .s_axi_awburst  ( CDMA_to_MBUS_m32_axi_awburst  ),
+            .s_axi_awlock   ( CDMA_to_MBUS_m32_axi_awlock   ),
+            .s_axi_awcache  ( CDMA_to_MBUS_m32_axi_awcache  ),
+            .s_axi_awprot   ( CDMA_to_MBUS_m32_axi_awprot   ),
+            .s_axi_awqos    ( CDMA_to_MBUS_m32_axi_awqos    ),
+            .s_axi_awregion ( CDMA_to_MBUS_m32_axi_awregion ),
+            .s_axi_awvalid  ( CDMA_to_MBUS_m32_axi_awvalid  ),
+            .s_axi_awready  ( CDMA_to_MBUS_m32_axi_awready  ),
+            .s_axi_wdata    ( CDMA_to_MBUS_m32_axi_wdata    ),
+            .s_axi_wstrb    ( CDMA_to_MBUS_m32_axi_wstrb    ),
+            .s_axi_wlast    ( CDMA_to_MBUS_m32_axi_wlast    ),
+            .s_axi_wvalid   ( CDMA_to_MBUS_m32_axi_wvalid   ),
+            .s_axi_wready   ( CDMA_to_MBUS_m32_axi_wready   ),
+            .s_axi_bid      ( CDMA_to_MBUS_m32_axi_bid      ),
+            .s_axi_bresp    ( CDMA_to_MBUS_m32_axi_bresp    ),
+            .s_axi_bvalid   ( CDMA_to_MBUS_m32_axi_bvalid   ),
+            .s_axi_bready   ( CDMA_to_MBUS_m32_axi_bready   ),
+            .s_axi_arid     ( CDMA_to_MBUS_m32_axi_arid     ),
+            .s_axi_araddr   ( CDMA_to_MBUS_m32_axi_araddr   ),
+            .s_axi_arlen    ( CDMA_to_MBUS_m32_axi_arlen    ),
+            .s_axi_arsize   ( CDMA_to_MBUS_m32_axi_arsize   ),
+            .s_axi_arburst  ( CDMA_to_MBUS_m32_axi_arburst  ),
+            .s_axi_arlock   ( CDMA_to_MBUS_m32_axi_arlock   ),
+            .s_axi_arcache  ( CDMA_to_MBUS_m32_axi_arcache  ),
+            .s_axi_arprot   ( CDMA_to_MBUS_m32_axi_arprot   ),
+            .s_axi_arqos    ( CDMA_to_MBUS_m32_axi_arqos    ),
+            .s_axi_arregion ( CDMA_to_MBUS_m32_axi_arregion ),
+            .s_axi_arvalid  ( CDMA_to_MBUS_m32_axi_arvalid  ),
+            .s_axi_arready  ( CDMA_to_MBUS_m32_axi_arready  ),
+            .s_axi_rid      ( CDMA_to_MBUS_m32_axi_rid      ),
+            .s_axi_rdata    ( CDMA_to_MBUS_m32_axi_rdata    ),
+            .s_axi_rresp    ( CDMA_to_MBUS_m32_axi_rresp    ),
+            .s_axi_rlast    ( CDMA_to_MBUS_m32_axi_rlast    ),
+            .s_axi_rvalid   ( CDMA_to_MBUS_m32_axi_rvalid   ),
+            .s_axi_rready   ( CDMA_to_MBUS_m32_axi_rready   ),
+            // 64-bit master to the MBUS crossbar (IDs tied off below)
+            .m_axi_awaddr   ( CDMA_to_MBUS_axi_awaddr       ),
+            .m_axi_awlen    ( CDMA_to_MBUS_axi_awlen        ),
+            .m_axi_awsize   ( CDMA_to_MBUS_axi_awsize       ),
+            .m_axi_awburst  ( CDMA_to_MBUS_axi_awburst      ),
+            .m_axi_awlock   ( CDMA_to_MBUS_axi_awlock       ),
+            .m_axi_awcache  ( CDMA_to_MBUS_axi_awcache      ),
+            .m_axi_awprot   ( CDMA_to_MBUS_axi_awprot       ),
+            .m_axi_awqos    ( CDMA_to_MBUS_axi_awqos        ),
+            .m_axi_awregion ( CDMA_to_MBUS_axi_awregion     ),
+            .m_axi_awvalid  ( CDMA_to_MBUS_axi_awvalid      ),
+            .m_axi_awready  ( CDMA_to_MBUS_axi_awready      ),
+            .m_axi_wdata    ( CDMA_to_MBUS_axi_wdata        ),
+            .m_axi_wstrb    ( CDMA_to_MBUS_axi_wstrb        ),
+            .m_axi_wlast    ( CDMA_to_MBUS_axi_wlast        ),
+            .m_axi_wvalid   ( CDMA_to_MBUS_axi_wvalid       ),
+            .m_axi_wready   ( CDMA_to_MBUS_axi_wready       ),
+            .m_axi_bresp    ( CDMA_to_MBUS_axi_bresp        ),
+            .m_axi_bvalid   ( CDMA_to_MBUS_axi_bvalid       ),
+            .m_axi_bready   ( CDMA_to_MBUS_axi_bready       ),
+            .m_axi_araddr   ( CDMA_to_MBUS_axi_araddr       ),
+            .m_axi_arlen    ( CDMA_to_MBUS_axi_arlen        ),
+            .m_axi_arsize   ( CDMA_to_MBUS_axi_arsize       ),
+            .m_axi_arburst  ( CDMA_to_MBUS_axi_arburst      ),
+            .m_axi_arlock   ( CDMA_to_MBUS_axi_arlock       ),
+            .m_axi_arcache  ( CDMA_to_MBUS_axi_arcache      ),
+            .m_axi_arprot   ( CDMA_to_MBUS_axi_arprot       ),
+            .m_axi_arqos    ( CDMA_to_MBUS_axi_arqos        ),
+            .m_axi_arregion ( CDMA_to_MBUS_axi_arregion     ),
+            .m_axi_arvalid  ( CDMA_to_MBUS_axi_arvalid      ),
+            .m_axi_arready  ( CDMA_to_MBUS_axi_arready      ),
+            .m_axi_rdata    ( CDMA_to_MBUS_axi_rdata        ),
+            .m_axi_rresp    ( CDMA_to_MBUS_axi_rresp        ),
+            .m_axi_rlast    ( CDMA_to_MBUS_axi_rlast        ),
+            .m_axi_rvalid   ( CDMA_to_MBUS_axi_rvalid       ),
+            .m_axi_rready   ( CDMA_to_MBUS_axi_rready       )
+        );
+        // The upsizer's 64-bit master omits IDs/region: tie them off on MBUS.
+        assign CDMA_to_MBUS_axi_awid     = '0;
+        assign CDMA_to_MBUS_axi_arid     = '0;
+        assign CDMA_to_MBUS_axi_awregion = '0;
+        assign CDMA_to_MBUS_axi_arregion = '0;
+    end else begin : gen_cdma_master_passthrough
+        // 32-bit MBUS (e.g. ibex): wire the CDMA master straight to the crossbar.
+        `ASSIGN_AXI_BUS(CDMA_to_MBUS, CDMA_to_MBUS_m32)
+    end
 
 // In HPC profile
 `ifdef HPC
