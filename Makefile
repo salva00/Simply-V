@@ -29,3 +29,11 @@ clean:
 	${MAKE} -C ${SW_ROOT} clean
 
 .PHONY: config hw sw xilinx units
+
+# Run a simulation from the repo root: forwards to hw/xilinx (two-phase regen + run).
+# Usage: make sim TEST=hello_world [CORE=<core>] [BACKEND=verilator]
+BACKEND ?= verilator
+TEST    ?= smoke
+sim:
+	$(MAKE) -C hw/xilinx sim BACKEND=$(BACKEND) TEST=$(TEST) $(if $(CORE),CORE=$(CORE))
+.PHONY: sim

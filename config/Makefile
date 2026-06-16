@@ -52,7 +52,7 @@ OUTPUT_SIM_SIMINC  := ${XILINX_ROOT}/sim/generated/siminc
 ###  	CMD PARAMS      ###
 ###########################
 
-PYTHON ?= python3.10
+PYTHON ?= python3
 
 INPUT_ARGS = \
 	--system_csv ${INPUT_SYSTEM_CSV} \

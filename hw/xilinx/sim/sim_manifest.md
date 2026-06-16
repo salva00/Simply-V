@@ -26,6 +26,22 @@ base to adapt (Questa is SV-native; xsim targets stay but are not in the active 
 | xlnx_axi_gpio_in / _out | export base ready | functional shim (IRQ on change) | interrupts | R2a ✅ |
 | xlnx_axi_cdma | export base ready | functional shim (simple mem-to-mem) | xlnx_cdma_examples | R2a ✅ |
 
+## CSV-driven flow
+
+Core selection and config are driven by `config/configs/common/config_system.csv`. `make sim`
+(or `make -C hw/xilinx sim BACKEND=verilator`) auto-regenerates config on every call — no
+manual step needed. Firmware and RTL cone self-specialize to the selected core.
+
+`make sim CORE=<core>` is an equivalent quick override (used by CI); it generates a temporary
+per-core CSV without modifying `config_system.csv`.
+
+Validator constraints when editing the CSV by hand:
+- **picorv32**: requires `VIO_RESETN_DEFAULT=0`.
+- **cv64a6 / cv64a6_ara**: requires `XLEN=64`; sys_parser rejects a mismatch.
+
+`settings.sh` is machine-agnostic. The caller provides the toolchains (`riscv32-unknown-elf-*`
+and `riscv64-unknown-elf-*`) on `PATH` and an active Python env (`python3` → simply-v conda).
+
 ## Cores (Verilator) — `make sim BACKEND=verilator TEST=<test> CORE=<core>`
 
 Cores are green for `hello_world` + `echo`/`interrupts`/`xlnx_cdma_examples`, except

@@ -30,8 +30,8 @@ CORE_SELECTOR_cv32e40p := CORE_CV32E40P
 CORE_SELECTOR_picorv32 := CORE_PICORV32
 CORE_SELECTOR_cv64a6     := CORE_CV64A6
 CORE_SELECTOR_cv64a6_ara := CORE_CV64A6_ARA
-# PYTHON override threaded into the config regen (python3.10 may not be on PATH).
-PYTHON ?= python3.10
+# Config flow python; resolved from the user's active env (override: PYTHON=...).
+PYTHON ?= python3
 
 # Per-TEST program + golden. Each example builds to
 # sw/SoC/examples/<TEST>/bin/<TEST>.{hex,bin}; its golden lives in stimuli/golden/.
@@ -54,22 +54,24 @@ TEST_STIM_ARG := $(if $(wildcard ${TEST_STIM}),+STIMULUS=${TEST_STIM},)
 # clean below so a stale one (SIM_FAST, picorv32 CSR-skip, other CORE) is never reused.
 # The FPGA build is unchanged; only the sim-only branches differ.
 TEST_EXTRA_MACROS := $(if $(filter interrupts,${TEST}),-DSIM_FAST,)
-# picorv32 lacks standard CSRs and compressed-ISA support. Build its firmware without
-# the interrupt-CSR setup (GAS --defsym -> startup.s .ifndef) and without the C extension
+# Firmware specialization keyed on CORE_SELECTOR/XLEN resolved from config.mk (phase 1
+# of `sim` regenerates config.mk from the active CSV before this makefile is re-read).
+# CORE_PICORV32 lacks standard CSRs and compressed-ISA support: build without the
+# interrupt-CSR setup (GAS --defsym -> startup.s .ifndef) and without the C extension
 # (C_EXTENSION=N -> rv32im, no RVC). The firmware is bare-metal (-nostdlib), so
 # C_EXTENSION=N covers the whole image. Other cores: unchanged.
 # The app build defaults C_EXTENSION=Y (RVC, sw/SoC/common/config.mk) but the lib Makefiles
 # default C_EXTENSION=N. Every non-picorv32 run carries C_EXTENSION=Y into TEST_CORE_FW (app
-# and lib rebuild below) so the libs match the RVC app. picorv32 is the only no-RVC core.
-ifeq (${CORE},picorv32)
+# and lib rebuild below) so the libs match the RVC app. CORE_PICORV32 is the only no-RVC core.
+ifeq (${CORE_SELECTOR},CORE_PICORV32)
 TEST_EXTRA_ASFLAGS := -Wa,--defsym,CORE_PICORV32=1
 TEST_CORE_FW       := C_EXTENSION=N
 else
 TEST_EXTRA_ASFLAGS :=
 TEST_CORE_FW       := C_EXTENSION=Y
 endif
-# 64-bit cores build firmware rv64im/lp64 (riscv64 prefix resolves via settings.sh).
-ifneq ($(filter ${CORE},cv64a6 cv64a6_ara),)
+# 64-bit cores build firmware rv64im/lp64 (riscv64 prefix resolved from the user's PATH).
+ifeq (${XLEN},64)
 TEST_XLEN := XLEN=64
 else
 TEST_XLEN :=
@@ -103,7 +105,10 @@ XVLOG     ?= xvlog
 XELAB     ?= xelab
 XSIM      ?= xsim
 
+# Two-phase: phase 1 regenerates config from the active CSV; phase 2 is a fresh make that
+# re-reads config.mk (make parses includes once, so the regen must be a separate invocation).
 sim:
+	${MAKE} sim_config_regen CORE=${CORE}
 	${MAKE} sim_${BACKEND}_${TEST}
 
 # Embedded-cone dispatch aliases: the embedded examples all share one build flow
@@ -222,28 +227,32 @@ sim_xsim_smoke:
 VL_EMB_DIR      := ${XILINX_SIM_BUILD_DIR}/verilator/embedded
 VL_EMB_FLIST    := ${XILINX_SIM_GENERATED_ROOT}/verilator_embedded.f
 
-# Temp per-core system CSV so the user's config_system.csv is untouched. Only built
-# when CORE is non-empty; sim_config_core then regenerates config_sim from it
-# (filelist/defines follow the selected core). picorv32 also needs VIO_RESETN_DEFAULT=0
-# (sys_parser.py:40 rejects picorv32 with VIO_RESETN!=0).
-CORE_CSV         := ${XILINX_SIM_BUILD_DIR}/config_system_${CORE}.csv
-USER_SYSTEM_CSV  := ${CONFIG_ROOT}/configs/common/config_system.csv
-SIM_CORE_DEP     := $(if ${CORE},sim_config_core,)
-# picorv32 also needs VIO_RESETN_DEFAULT=0. The sed scripts hold commas, so the
-# conditional is done in shell (make's $(if) would split on them).
-sim_config_core:
-	mkdir -p ${XILINX_SIM_BUILD_DIR}
-	sed 's/^CORE_SELECTOR,.*/CORE_SELECTOR,${CORE_SELECTOR_${CORE}}/' \
-	    ${USER_SYSTEM_CSV} > ${CORE_CSV}
-	if [ "${CORE}" = picorv32 ]; then \
-	    sed -i 's/^VIO_RESETN_DEFAULT,.*/VIO_RESETN_DEFAULT,0/' ${CORE_CSV}; \
-	fi
-	# 64-bit cores must carry XLEN=64 (sys_parser rejects mismatches).
-	case "${CORE}" in cv64a6|cv64a6_ara) \
-	    sed -i 's/^XLEN,.*/XLEN,64/' ${CORE_CSV};; esac
-	${MAKE} -C ${CONFIG_ROOT} config_sim PYTHON=${PYTHON} INPUT_SYSTEM_CSV=${CORE_CSV}
+# Active system CSV: the user's config_system.csv, or a temp per-core CSV when CORE= is set
+# (the user CSV is never edited in place). The temp CSV mirrors what the user would set by
+# hand for that core (CORE_SELECTOR, XLEN=64 for the 64-bit cores, VIO_RESETN_DEFAULT=0 for
+# picorv32 — sys_parser.py rejects mismatches).
+CORE_CSV          := ${XILINX_SIM_BUILD_DIR}/config_system_${CORE}.csv
+USER_SYSTEM_CSV   := ${CONFIG_ROOT}/configs/common/config_system.csv
+ACTIVE_SYSTEM_CSV := $(if ${CORE},${CORE_CSV},${USER_SYSTEM_CSV})
 
-.PHONY: sim_config_core
+# Phase 1 of `sim`: regenerate the config the sim consumes — sw config.mk (toolchain XLEN, ld,
+# hal), config.mk (CORE_SELECTOR/XLEN/VIO_RESETN read back by this makefile), and the sim
+# filelist/defines/addrmap — from the active CSV. The second `sim` make then sees the fresh
+# config.mk, so the firmware/cone specialization picks up the resolved CORE_SELECTOR/XLEN.
+sim_config_regen:
+	mkdir -p ${XILINX_SIM_BUILD_DIR}
+	if [ -n "${CORE}" ]; then \
+	    sed 's/^CORE_SELECTOR,.*/CORE_SELECTOR,${CORE_SELECTOR_${CORE}}/' \
+	        ${USER_SYSTEM_CSV} > ${CORE_CSV}; \
+	    if [ "${CORE}" = picorv32 ]; then \
+	        sed -i 's/^VIO_RESETN_DEFAULT,.*/VIO_RESETN_DEFAULT,0/' ${CORE_CSV}; fi; \
+	    case "${CORE}" in cv64a6|cv64a6_ara) \
+	        sed -i 's/^XLEN,.*/XLEN,64/' ${CORE_CSV};; esac; \
+	fi
+	${MAKE} -C ${CONFIG_ROOT} config_sw config_xilinx config_sim \
+	        PYTHON=${PYTHON} INPUT_SYSTEM_CSV=${ACTIVE_SYSTEM_CSV}
+
+.PHONY: sim_config_regen
 
 # Elaboration-only gate: catches port drift between shims and RTL.
 # -Wno-ENUMVALUE: Ara's lane_sequencer assigns packed logic into enum-typed struct
@@ -267,7 +276,7 @@ VL_EMB_GOLDEN := ${TEST_GOLDEN}
 # Full build + run: the ${TEST} program boots from BRAM_0, UART output is compared
 # to the golden by the C++ TB ([EMB] PASS / exit 0 on match, [EMB] FAIL / exit 1).
 # ${TEST_HEX} is a prerequisite so the example program is built on demand.
-sim_verilator_embedded: ${SIM_CORE_DEP} ${TEST_HEX}
+sim_verilator_embedded: ${TEST_HEX}
 	mkdir -p ${VL_EMB_DIR}
 	${VERILATOR} -cc --exe --build -j 0 -sv -Wno-fatal -Wno-ENUMVALUE -fno-dfg --no-timing \
 		--top-module simplyv \
