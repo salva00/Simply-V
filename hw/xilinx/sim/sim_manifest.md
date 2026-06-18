@@ -53,7 +53,7 @@ picorv32 which skips `interrupts` (custom IRQ, see Notes).
 | cv32e40p | 32 | needed BRAM shim word-align fix (cv32e40p OBI sends byte addresses) |
 | picorv32 | 32 | needs no-RVC firmware (CORE=picorv32 builds app+libs with C_EXTENSION=N) + crt0 CSR-skip (no standard mtvec/mstatus/mie). COMPRESSED_ISA=0, custom IRQ -> the standard `interrupts` example (CLINT/PLIC -> mtvec) does not run; hello_world/echo/cdma pass. |
 | cv64a6 | 64 | CVA6 scalar; firmware rv64im/lp64 (CORE=cv64a6 builds app+libs with XLEN=64). |
-| cv64a6_ara | 64 | CVA6 + Ara vector unit; same XLEN=64 firmware. Ara CDMA is the slowest run (~25-30 min CPU). |
+| cv64a6_ara | 64 | CVA6 + Ara vector unit; same XLEN=64 firmware. Ara CDMA is the slowest run (~25-30 min CPU); CI skips it by default (`SIM_CI_FULL=1` to include). |
 
 The 64-bit cores need the **riscv64 toolchain** (`riscv64-unknown-elf-`, on PATH via
 `settings.sh`); the Ara RTL is vendored via `hw/units/custom_cv64a6_ara/fetch_sources.sh`.
