@@ -1,0 +1,23 @@
+--- a/MEMACCESS.v
++++ b/MEMACCESS.v
+@@ -350,10 +350,17 @@
+         end
+       end
+ 
++      // L1D single-word (NCA / MMIO) access: the external mem-bus master takes a
++      // variable number of cycles to grant+respond, so we must hold the access and
++      // wait for mem_valid_i. On a read we forward the data+valid pulse to L1D
++      // (which stalls in READ_MEM_NCA until data_valid_from_mem_i); writes also wait
++      // for mem_valid_i (the bridge pulses it on write completion) before releasing.
+       if (triggered_l1d_word_access_r) begin
+-        if (pending_l1d_word_access_r) begin
+-          pending_l1d_word_access_r <= 0;
+-          triggered_l1d_word_access_r <= 0;
++        if (mem_valid_i) begin
++          l1d_valid_o <= l1d_word_read_r;
++          l1d_data_o  <= mem_data_i;
++          pending_l1d_word_access_r   <= 1'b0;
++          triggered_l1d_word_access_r <= 1'b0;
+         end
+       end
+ 

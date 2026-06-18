@@ -71,7 +71,9 @@ module mx_mem_bridge #(
                     m_mem_we   <= 1'b0; m_mem_req <= 1'b1; state <= RD_REQ;
                 end
             end
-            WR_REQ: if (m_mem_gnt) begin m_mem_req <= 1'b0; m_mem_we <= 1'b0; state <= IDLE; end
+            WR_REQ: if (m_mem_gnt) begin
+                m_mem_req <= 1'b0; m_mem_we <= 1'b0; core_valid_o <= 1'b1; state <= IDLE;
+            end
             default: state <= IDLE;
             endcase
         end

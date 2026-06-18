@@ -31,7 +31,18 @@ while IFS= read -r filename; do
     fi
 done < "$FLIST"
 
+printf "${YELLOW}[FETCH_SOURCES $IP_NAME] Copy bridge into rtl${NC}\n"
+cp "$PWD/mx_mem_bridge.sv" "$RTL_DIR/"
+
+# FPU.v instantiates module MC_OPERATOR, which upstream declares in
+# MC_OPERATOR_sys.v (filename != module name). Verilator resolves uninstantiated
+# .v leaves by filename==module auto-lookup, so rename the vendored file to match
+# the module name. (We deliberately vendor only the _sys variant; renaming avoids
+# a duplicate-module clash with the upstream MC_OPERATOR.v we do NOT vendor.)
+mv "$RTL_DIR/MC_OPERATOR_sys.v" "$RTL_DIR/MC_OPERATOR.v"
+
 printf "${YELLOW}[FETCH_SOURCES $IP_NAME] Applying local patches${NC}\n"
 patch -p1 -d rtl < "$PWD/assets/patches/l1d_uncached.patch"
+patch -p1 -d rtl < "$PWD/assets/patches/memaccess_nca_word.patch"
 
 printf "${GREEN}[FETCH_SOURCES $IP_NAME] Completed${NC}\n"

@@ -18,3 +18,18 @@
                 ((addr_i >= `L1D_NCA_FIRST_1) & (addr_i <= `L1D_NCA_LAST_1)) |
                 ((addr_i >= `L1D_NCA_FIRST_2) & (addr_i <= `L1D_NCA_LAST_2)) |
                 ((addr_i >= `L1D_NCA_FIRST_3) & (addr_i <= `L1D_NCA_LAST_3));
+@@ -267,7 +269,13 @@
+ // address to memory. Is any of the following:
+ //   - registered address for replacement in WRITE_MEM state
+ //   - address from the core in any other condition (read for a block, write or read for a non-cacheable address)
+-wire [ADDR_w-1:0] addr_mem_w /* verilator public */ = (state_r == `L1D_STATE_WRITE_MEM) ? {repl_address_r[31:6],6'd0} : {addr_i[31:6],6'd0};
++// Cacheable block transfers use the 64-byte-aligned line base (the word offset is
++// carried separately in word_index_mem_o). Non-cacheable (MMIO) single-word accesses
++// carry no word index, so they must present the full byte address or every register
++// in a peripheral collapses onto offset 0 (UART status/ctrl all aliasing to 0x20000).
++wire [ADDR_w-1:0] addr_mem_w /* verilator public */ = (state_r == `L1D_STATE_WRITE_MEM) ? {repl_address_r[31:6],6'd0} :
++                                                       nca_w                            ? addr_i :
++                                                                                          {addr_i[31:6],6'd0};
+ assign addr_mem_o = addr_mem_w;
+ 
+ // word, half, and byte write signals to mem. (words for block access)
