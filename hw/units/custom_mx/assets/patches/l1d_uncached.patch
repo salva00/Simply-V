@@ -1,0 +1,20 @@
+--- a/L1D.v
++++ b/L1D.v
+@@ -49,6 +49,7 @@
+ `define L1D_NCA_LAST_3    32'h53FFFFFF   // MBR region end
+ 
+ module L1D #(
++  parameter  UNCACHED_BASE = 32'h0002_0000, // Simply-V: addresses at/above this are MMIO (uncached)
+   parameter  ID = 0,                   // node id
+   parameter  NUM_LINES=16,             // number of cache lines
+   parameter  INDEX_w = 4,              // index width
+@@ -170,7 +171,8 @@
+ 
+ 
+ // non-cacheable access
+-assign nca_w = ((addr_i >= `L1D_NCA_FIRST_0) & (addr_i <= `L1D_NCA_LAST_0)) |
++assign nca_w = (addr_i >= UNCACHED_BASE)                                  | // Simply-V MMIO window (UART/GPIO/TIM/CLINT/CDMA/PLIC)
++               ((addr_i >= `L1D_NCA_FIRST_0) & (addr_i <= `L1D_NCA_LAST_0)) |
+                ((addr_i >= `L1D_NCA_FIRST_1) & (addr_i <= `L1D_NCA_LAST_1)) |
+                ((addr_i >= `L1D_NCA_FIRST_2) & (addr_i <= `L1D_NCA_LAST_2)) |
+                ((addr_i >= `L1D_NCA_FIRST_3) & (addr_i <= `L1D_NCA_LAST_3));

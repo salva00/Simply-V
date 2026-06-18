@@ -30,4 +30,8 @@ while IFS= read -r filename; do
         printf "${RED}[FETCH_SOURCES $IP_NAME] Error: $filename not found${NC}\n"; exit 1
     fi
 done < "$FLIST"
+
+printf "${YELLOW}[FETCH_SOURCES $IP_NAME] Applying local patches${NC}\n"
+patch -p1 -d rtl < "$PWD/assets/patches/l1d_uncached.patch"
+
 printf "${GREEN}[FETCH_SOURCES $IP_NAME] Completed${NC}\n"
