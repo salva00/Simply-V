@@ -302,9 +302,9 @@ module rv_socket # (
                 .data_mem_wdata  ( core_data_mem_wdata  ),
                 .data_mem_rdata  ( core_data_mem_rdata  ),
                 .data_mem_error  ( core_data_mem_error  ),
-                .irq_software_i  ( 1'b0 ),
-                .irq_timer_i     ( 1'b0 ),
-                .irq_external_i  ( 1'b0 ),
+                .irq_software_i  ( irq_i[RVSOCKET_SW_INTERRUPT]  ),
+                .irq_timer_i     ( irq_i[RVSOCKET_TIM_INTERRUPT] ),
+                .irq_external_i  ( irq_i[RVSOCKET_EXT_INTERRUPT] ),
                 .irq_fast_i      ( '0 ),
                 .irq_nm_i        ( 1'b0 ),
                 .debug_req_i     ( 1'b0 )

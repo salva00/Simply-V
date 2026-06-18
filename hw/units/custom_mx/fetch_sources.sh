@@ -44,5 +44,6 @@ mv "$RTL_DIR/MC_OPERATOR_sys.v" "$RTL_DIR/MC_OPERATOR.v"
 printf "${YELLOW}[FETCH_SOURCES $IP_NAME] Applying local patches${NC}\n"
 patch -p1 -d rtl < "$PWD/assets/patches/l1d_uncached.patch"
 patch -p1 -d rtl < "$PWD/assets/patches/memaccess_nca_word.patch"
+patch -p1 -d rtl < "$PWD/assets/patches/core_irq.patch"
 
 printf "${GREEN}[FETCH_SOURCES $IP_NAME] Completed${NC}\n"

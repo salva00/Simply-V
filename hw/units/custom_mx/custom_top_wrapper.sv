@@ -36,6 +36,9 @@ module custom_top_wrapper #(
         .clk_i        ( clk_i ),
         .rst_i        ( rst_ni ),            // CORE resets on if(~rst_i): active-low; HAZARDS.v uses if(rst_i) but receives same port — upstream inconsistency, port polarity is active-low
         .clk_gated_i  ( clk_i ),             // no gating for bring-up
+        .irq_software_i ( irq_software_i ),  // CLINT MSIP
+        .irq_timer_i    ( irq_timer_i ),     // CLINT MTIP
+        .irq_external_i ( irq_external_i ),  // PLIC MEIP
         .addr_o       ( c_addr ),
         .data_o       ( c_wdata ),
         .read_o       ( c_read ),
@@ -60,7 +63,6 @@ module custom_top_wrapper #(
         .m_mem_we(data_mem_we), .m_mem_be(data_mem_be), .m_mem_error(data_mem_error)
     );
 
-    // bring-up tie-offs (wired in Task 6)
-    logic _unused = &{1'b0, irq_software_i, irq_timer_i, irq_external_i,
-                       irq_fast_i, irq_nm_i, debug_req_i, hart_id_i, boot_addr_i, c_wait};
+    // bring-up tie-offs (irq_software/timer/external now wired to the CORE)
+    logic _unused = &{1'b0, irq_fast_i, irq_nm_i, debug_req_i, hart_id_i, boot_addr_i, c_wait};
 endmodule

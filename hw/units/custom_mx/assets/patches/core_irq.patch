@@ -1,0 +1,225 @@
+--- a/CORE.v	2026-06-18 20:38:03.825298417 +0200
++++ b/CORE.v	2026-06-18 20:41:23.015096777 +0200
+@@ -173,6 +173,10 @@
+     input                          rst_i,                             // reset signal
+     input                          clk_gated_i,                       // clock gated signal
+     //
++    input                          irq_software_i,                    // machine software interrupt (CLINT MSIP)
++    input                          irq_timer_i,                       // machine timer interrupt (CLINT MTIP)
++    input                          irq_external_i,                    // machine external interrupt (PLIC MEIP)
++    //
+     output [31:0]                  addr_o,                            // Address to read from/write to
+     output [31:0]                  data_o,                            // Data to write into memory
+     output                         read_o,                            // read signal
+@@ -270,6 +274,8 @@
+   // csr signals
+   wire         clk_gated_to_csr_w /* verilator public */;          // clock gated signal to the CSR module
+   wire [31:0]  csr_data_from_csr_w /* verilator public */;         // csr data
++  wire         irq_take_from_csr_w /* verilator public */;         // interrupt trap-entry pulse from CSR
++  wire [31:0]  mtvec_from_csr_w /* verilator public */;            // mtvec value from CSR (machine trap handler)
+   wire [1:0]   priv_mode_from_csr_w /* verilator public */;        // privilege mode output from CSR
+   wire         satp_write_from_csr_w /* verilator public */;       // satp write pulse from CSR (for TLB flush)
+ 
+@@ -625,6 +631,8 @@
+     .csr_data_i            ( csr_data_from_exm_w[31:0]       ),   // csr data at EXM stage (mepc for ecall/mret, sepc for sret)
+     .page_fault_i          ( page_fault_m_w                  ),   // page fault at M stage (IMMU or DMMU)
+     .stvec_i               ( stvec_from_csr_w                ),   // stvec: supervisor trap handler address
++    .irq_take_i            ( irq_take_from_csr_w             ),   // interrupt trap-entry (asynchronous, from CSR)
++    .mtvec_i               ( mtvec_from_csr_w                ),   // mtvec: machine trap handler address
+     .pc_addr_i             ( pc_from_pcadder_w[31:0]         ),   // Input: PC from PCADDER
+     .pc_o                  ( addr_from_mxpc_w[31:0]          )    // Output: PC address to PCreg
+   );
+@@ -858,6 +866,13 @@
+     .dmmu_store_fault_i ( page_fault_store_m_w        ),  // store page fault (cause 15)
+     .fault_pc_i         ( fault_pc_m_w                ),  // PC of faulting instruction
+     .fault_vaddr_i      ( fault_vaddr_m_w             ),  // faulting virtual address
++    .irq_software_i     ( irq_software_i              ),  // CLINT MSIP -> mip[3]
++    .irq_timer_i        ( irq_timer_i                 ),  // CLINT MTIP -> mip[7]
++    .irq_external_i     ( irq_external_i              ),  // PLIC  MEIP -> mip[11]
++    .irq_epc_i          ( pc_from_exm_w               ),  // PC at M stage -> mepc on interrupt trap-entry
++    .irq_epc_valid_i    ( valid_instr_from_exm_w      ),  // only trap on a valid committing instruction
++    .irq_take_o         ( irq_take_from_csr_w         ),  // interrupt trap-entry pulse (to MXPC/HAZARDS)
++    .mtvec_o            ( mtvec_from_csr_w            ),  // mtvec (to MXPC redirect)
+     .priv_mode_o        ( priv_mode_from_csr_w        ),
+     .satp_write_o       ( satp_write_from_csr_w       ),
+     .satp_o             ( satp_from_csr_w             ),
+@@ -1638,6 +1653,7 @@
+     // MMU stall and page fault
+     .mmu_stall_i            ( mmu_stall_w                          ),   // MMU stall (TLB miss or page walk)
+     .page_fault_m_i         ( page_fault_m_w                       ),   // page fault at M stage
++    .irq_take_m_i           ( irq_take_from_csr_w                  ),   // interrupt trap-entry (flush + redirect, like page fault)
+     // CSR forwarding
+     .csr_read_m_i           ( mxdata_sel_from_exm_w == 2'd3        ),   // CSR read at M stage (mxdata_sel==3 means CSR data goes to rd)
+     // MX systolic array
+--- a/CSR.v	2026-06-18 20:38:03.825368043 +0200
++++ b/CSR.v	2026-06-18 20:40:43.043980470 +0200
+@@ -82,6 +82,15 @@
+     input         dmmu_store_fault_i,               // store/AMO page fault (cause 15)
+     input  [31:0] fault_pc_i,                       // PC of faulting instruction (sepc)
+     input  [31:0] fault_vaddr_i,                    // faulting virtual address (stval)
++    // External interrupt pending lines (level-sensitive, from CLINT/PLIC)
++    input         irq_software_i,                   // machine software interrupt (-> mip.MSIP, bit 3)
++    input         irq_timer_i,                      // machine timer interrupt    (-> mip.MTIP, bit 7)
++    input         irq_external_i,                   // machine external interrupt (-> mip.MEIP, bit 11)
++    // Interrupt trap-entry interface (mirrors the page-fault path)
++    input  [31:0] irq_epc_i,                        // PC of the instruction at M stage (becomes mepc on trap-entry)
++    input         irq_epc_valid_i,                  // M-stage instruction is valid (only trap on a real committing PC)
++    output        irq_take_o /* verilator public */,// asserted the cycle an interrupt is taken (drives MXPC/HAZARDS redirect+flush)
++    output [31:0] mtvec_o /* verilator public */,   // mtvec value (machine trap handler address, for MXPC redirect)
+     // Privilege mode output
+     output [1:0]  priv_mode_o /* verilator public */,   // current privilege mode output
+     // SATP flush signal (for TLB invalidation)
+@@ -178,6 +187,28 @@
+   assign stvec_o       = stvec_r;
+   // Privilege mode output
+   assign priv_mode_o = priv_mode_r;
++  // mtvec output (machine trap handler, for interrupt redirect in MXPC)
++  assign mtvec_o = mtvec_r;
++
++  // ===========================================================================
++  // Interrupt trap-entry decision (combinational), mirroring the page-fault path
++  // ---------------------------------------------------------------------------
++  // An interrupt is taken when interrupts are globally enabled (mstatus.MIE),
++  // at least one enabled interrupt is pending (mie & mip), and there is a valid
++  // committing instruction at the M stage whose PC we can save as mepc.
++  // Priority (RISC-V Priv spec): external (11) > software (3) > timer (7).
++  // ===========================================================================
++  wire [31:0] irq_pending_w = mie_r & mip_r;                  // enabled & pending
++  // Synchronous traps/returns at WB take precedence over the asynchronous
++  // interrupt: never preempt an in-flight ecall/mret/sret or a page fault.
++  wire        irq_blocked_w = ecall_instr_i | mret_instr_i | sret_instr_i |
++                              immu_page_fault_i | dmmu_load_fault_i | dmmu_store_fault_i;
++  wire        irq_any_w     = mstatus_r[3] & (|irq_pending_w) & irq_epc_valid_i & ~irq_blocked_w;
++  wire [3:0]  irq_cause_w   = irq_pending_w[11] ? 4'd11 :     // MEI: machine external
++                              irq_pending_w[3]  ? 4'd3  :     // MSI: machine software
++                              irq_pending_w[7]  ? 4'd7  :     // MTI: machine timer
++                                                  4'd0;
++  assign irq_take_o = irq_any_w;
+   // read mux: returns the value of the requested CSR (with write-through for same-cycle WSC)
+   assign data_o = wsc_mstatus_w & read_mstatus_w ? new_value_w :
+                   read_mstatus_w                 ? mstatus_r   :
+@@ -256,7 +287,16 @@
+        // instret increments when pipeline is active (not stalled)
+        instret_r <= instret_r + 64'd1;
+        // Privilege mode transitions
+-       if (immu_page_fault_i | dmmu_load_fault_i | dmmu_store_fault_i) begin
++       if (irq_any_w) begin
++         // Asynchronous interrupt: trap to M-mode.
++         // Save MIE to MPIE, disable interrupts, save MPP, record mepc/mcause.
++         mstatus_r[7]     <= mstatus_r[3];           // MPIE = MIE
++         mstatus_r[3]     <= 1'b0;                    // MIE  = 0
++         mstatus_r[12:11] <= priv_mode_r;            // MPP  = current mode
++         priv_mode_r      <= `PRIV_M;                 // transition to M-mode
++         mepc_r           <= irq_epc_i;              // mepc = PC of trapped instruction
++         mcause_r         <= {1'b1, 27'b0, irq_cause_w}; // interrupt bit + cause
++       end else if (immu_page_fault_i | dmmu_load_fault_i | dmmu_store_fault_i) begin
+          // Page fault: trap to S-mode (supervisor)
+          // Save SIE to SPIE, then disable interrupts (SIE=0)
+          sstatus_r[5]  <= sstatus_r[1];             // SPIE = SIE
+@@ -316,6 +356,14 @@
+          if (wsc_fflags_w)  fcsr_r    <= {24'b0, fcsr_r[7:5], new_value_w[4:0]};
+        end
+      end
++     // External interrupt pending lines latched into mip (level-sensitive,
++     // not gated — mirrors cycle_r). Placed textually after the CSR-write
++     // block so these three hardware-owned bits always win: mip_r has a
++     // single driver (this always block), so there is no double-drive even
++     // though a csrw mip may have targeted the same word above.
++     mip_r[3]  <= irq_software_i;   // MSIP
++     mip_r[7]  <= irq_timer_i;      // MTIP
++     mip_r[11] <= irq_external_i;   // MEIP
+     end
+   end
+ 
+--- a/MXPC.v	2026-06-18 20:38:03.825396201 +0200
++++ b/MXPC.v	2026-06-18 20:39:16.828886377 +0200
+@@ -52,12 +52,15 @@
+   input [31:0]  csr_data_i /* verilator public */,             // csr data at EXM stage (mepc for mret/ecall, sepc for sret)
+   input         page_fault_i /* verilator public */,           // page fault at M stage (IMMU or DMMU)
+   input [31:0]  stvec_i /* verilator public */,                // stvec: supervisor trap handler address
++  input         irq_take_i /* verilator public */,             // interrupt trap-entry (asynchronous, from CSR)
++  input [31:0]  mtvec_i /* verilator public */,                // mtvec: machine trap handler address
+   output [31:0] pc_o /* verilator public */                    // output address
+ );
+ 
+ // Priority (highest to lowest):
+-//   page_fault > ecall/mret/sret > jal > branch misspredict > BTB predict > PC+4
+-assign pc_o = page_fault_i                              ? stvec_i              :   // page fault: redirect to stvec
++//   interrupt > page_fault > ecall/mret/sret > jal > branch misspredict > BTB predict > PC+4
++assign pc_o = irq_take_i                                ? mtvec_i              :   // interrupt: redirect to mtvec
++              page_fault_i                              ? stvec_i              :   // page fault: redirect to stvec
+               ecall_instr_i | mret_instr_i | sret_instr_i ? csr_data_i         :   // ecall/mret/sret instruction at EX/M stage
+               jal_instr_i                               ? alu_data_i           :   // jal/jalr instruction at EX/M stage
+               (~pred_i &  cond_i)                       ? alu_data_i           :   // misspredict, the instruction at EX/M has a taken branch
+--- a/HAZARDS.v	2026-06-18 20:38:03.825419834 +0200
++++ b/HAZARDS.v	2026-06-18 20:39:06.011125501 +0200
+@@ -78,6 +78,8 @@
+   input        mmu_stall_i,          // combined MMU stall (IMMU | DMMU)
+   // Page fault input (from M stage, IMMU or DMMU)
+   input        page_fault_m_i,       // page fault at M stage (triggers flush + redirect)
++  // Interrupt trap-entry input (from CSR, asynchronous)
++  input        irq_take_m_i,         // taking an interrupt this cycle (triggers flush + redirect, same as page fault)
+   // F extension inputs
+   input        fp_instr_id_i,        // F extension FP instruction at ID stage (reads FP registers)
+   input [4:0]  fp_rs3_id_i,          // FP rs3 register ID at ID stage (R4-type FMA)
+@@ -154,7 +156,7 @@
+ // wire for any flush event at M stage (JAL, ECALL, MRET, mispredict, or page fault)
+ // page_fault_m_i is included so that clk_gated_pcreg/ifid are NOT asserted during a page fault
+ // (the flush signals handle the pipeline cleanup instead)
+-wire flush_event_w = jal_instr_m_i | ecall_instr_m_i | mret_instr_m_i | sret_instr_m_i | misspredict_w | page_fault_m_i;
++wire flush_event_w = jal_instr_m_i | ecall_instr_m_i | mret_instr_m_i | sret_instr_m_i | misspredict_w | page_fault_m_i | irq_take_m_i;
+ 
+ // ============================================================================
+ // SCOREBOARD for M extension instructions
+@@ -297,7 +299,7 @@
+ 
+ // a load hazard is canceled if there will be a flush because of a mispredict or a jump (jal, ecall, mret) at M stage
+ // a load hazard is canceled if there will be a flush because of a mispredict, a jump (jal, ecall, mret) or a page fault at M stage
+-wire load_hazard_w = load_hazard_all_w & ~misspredict_w & ~jal_instr_m_i & ~ecall_instr_m_i & ~mret_instr_m_i & ~page_fault_m_i;
++wire load_hazard_w = load_hazard_all_w & ~misspredict_w & ~jal_instr_m_i & ~ecall_instr_m_i & ~mret_instr_m_i & ~page_fault_m_i & ~irq_take_m_i;
+ 
+ // wire for data hazards with Memory (data to be written into memory)
+ wire mem_hazard_WBtoM_w /* verilator public */  = ((rd_wb_i    == rs2_m_i)    & write_rd_wb_i  & store_m_i)    |
+@@ -328,21 +330,21 @@
+ assign clk_gated_ifid_o    = (wait_l1i_i | wait_l1d_i | mld_m_busy_i | load_hazard_w | muldiv_data_hazard | structural_hazard_wb | multicycle_stall_w | mret_csr_hazard_w) & ~flush_event_w;
+ // REGBANK and CSR: also unfreeze on page fault so that exception CSR writes
+ // (scause, sepc, sstatus) are applied in the same cycle as the flush
+-assign clk_gated_regbank_o = (wait_l1i_i | wait_l1d_i | mld_m_busy_i | muldiv_data_hazard | structural_hazard_wb | mmu_stall_i) & ~page_fault_m_i;
+-assign clk_gated_csr_o     = (wait_l1i_i | wait_l1d_i | mld_m_busy_i | muldiv_data_hazard | structural_hazard_wb | mmu_stall_i) & ~page_fault_m_i;
+-// IDEX: also unfreeze on page fault so that flush_idex_o can insert a bubble
+-// (prevents instructions behind the faulting one from surviving the flush)
+-assign clk_gated_idex_o    = (wait_l1i_i | wait_l1d_i | mld_m_busy_i | muldiv_data_hazard | structural_hazard_wb | multicycle_stall_w) & ~page_fault_m_i;
+-assign clk_gated_idex_possible    = (wait_l1i_i | wait_l1d_i  | muldiv_data_hazard | structural_hazard_wb | muldiv_stall_w | bitmanip_stall_w | fpu_stall_w | mmu_stall_i) & ~page_fault_m_i;
++assign clk_gated_regbank_o = (wait_l1i_i | wait_l1d_i | mld_m_busy_i | muldiv_data_hazard | structural_hazard_wb | mmu_stall_i) & ~(page_fault_m_i | irq_take_m_i);
++assign clk_gated_csr_o     = (wait_l1i_i | wait_l1d_i | mld_m_busy_i | muldiv_data_hazard | structural_hazard_wb | mmu_stall_i) & ~(page_fault_m_i | irq_take_m_i);
++// IDEX: also unfreeze on page fault / interrupt so that flush_idex_o can insert a bubble
++// (prevents instructions behind the trapping one from surviving the flush)
++assign clk_gated_idex_o    = (wait_l1i_i | wait_l1d_i | mld_m_busy_i | muldiv_data_hazard | structural_hazard_wb | multicycle_stall_w) & ~(page_fault_m_i | irq_take_m_i);
++assign clk_gated_idex_possible    = (wait_l1i_i | wait_l1d_i  | muldiv_data_hazard | structural_hazard_wb | muldiv_stall_w | bitmanip_stall_w | fpu_stall_w | mmu_stall_i) & ~(page_fault_m_i | irq_take_m_i);
+ assign clk_gated_alu_o     = wait_l1i_i | wait_l1d_i | mmu_stall_i;
+ // MMU stall (TLB miss or page walk) freezes the entire pipeline, just like a L1I/L1D miss.
+ // Exception: when a page fault is detected at M stage (page_fault_m_i=1), the flush must
+ // take priority over the MMU stall for EXM/L1D/MWB so that the faulting instruction is
+ // cancelled even if the IMMU is simultaneously doing a page walk for the trap handler.
+ // EXM: descongela cuando hay page fault para que el flush (burbuja) pueda entrar
+-assign clk_gated_exm_o     = (wait_l1i_i | wait_l1d_i | mld_m_busy_i | mmu_stall_i) & ~page_fault_m_i;
++assign clk_gated_exm_o     = (wait_l1i_i | wait_l1d_i | mld_m_busy_i | mmu_stall_i) & ~(page_fault_m_i | irq_take_m_i);
+ // L1D: descongela también para que no complete una operación de memoria incorrecta
+-assign clk_gated_l1d_o     = (wait_l1i_i | mmu_stall_i)               & ~page_fault_m_i;
++assign clk_gated_l1d_o     = (wait_l1i_i | mmu_stall_i)               & ~(page_fault_m_i | irq_take_m_i);
+ // MWB: permanece gateado durante page fault para que la instrucción faulting
+ // no avance de EXM a MWB mientras EXM recibe la burbuja del flush
+ assign clk_gated_mwb_o     = wait_l1i_i | wait_l1d_i | mld_m_busy_i | mmu_stall_i;//va blocato
+@@ -352,9 +354,9 @@
+ 
+ // ID, EX, and M stages are flushed when a jump, ecall, mret, page fault or a misspredicted branch is at M stage
+ // At EX stage we introduce a bubble if there is a load hazard
+-assign flush_ifid_o        = jal_instr_m_i | ecall_instr_m_i | mret_instr_m_i | sret_instr_m_i | misspredict_w | page_fault_m_i;
+-assign flush_idex_o        = jal_instr_m_i | ecall_instr_m_i | mret_instr_m_i | sret_instr_m_i | misspredict_w | load_hazard_w | muldiv_data_hazard | structural_hazard_wb | page_fault_m_i | mret_csr_hazard_w;
+-assign flush_exm_o         = jal_instr_m_i | ecall_instr_m_i | mret_instr_m_i | sret_instr_m_i | misspredict_w | multicycle_stall_w | page_fault_m_i;
++assign flush_ifid_o        = jal_instr_m_i | ecall_instr_m_i | mret_instr_m_i | sret_instr_m_i | misspredict_w | page_fault_m_i | irq_take_m_i;
++assign flush_idex_o        = jal_instr_m_i | ecall_instr_m_i | mret_instr_m_i | sret_instr_m_i | misspredict_w | load_hazard_w | muldiv_data_hazard | structural_hazard_wb | page_fault_m_i | mret_csr_hazard_w | irq_take_m_i;
++assign flush_exm_o         = jal_instr_m_i | ecall_instr_m_i | mret_instr_m_i | sret_instr_m_i | misspredict_w | multicycle_stall_w | page_fault_m_i | irq_take_m_i;
+ assign flush_mwb_o         = 1'b0;
+ // mxalu1 multiplexer select signal (takes into account data hazards MtoEX1 and WBtoEX1, MtoEX1 has priority)
+ // CSR MtoEX1 hazard has highest priority (sel=3'd4: CSR read data from M stage)
