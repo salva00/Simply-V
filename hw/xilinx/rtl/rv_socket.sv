@@ -91,7 +91,7 @@ module rv_socket # (
     ////////////////////////////
 
     // Check if the selected Core is compatible with the system XLEN
-    if ( LOCAL_DATA_WIDTH == 64 && CORE_SELECTOR inside {CORE_PICORV32,CORE_CV32E40P,CORE_IBEX,CORE_MICROBLAZEV_RV32,CORE_DUAL_MICROBLAZEV_RV32} ||
+    if ( LOCAL_DATA_WIDTH == 64 && CORE_SELECTOR inside {CORE_PICORV32,CORE_CV32E40P,CORE_IBEX,CORE_MX,CORE_MICROBLAZEV_RV32,CORE_DUAL_MICROBLAZEV_RV32} ||
          LOCAL_DATA_WIDTH == 32 && CORE_SELECTOR inside {CORE_CV64A6, CORE_CV64A6_ARA, CORE_MICROBLAZEV_RV64} ) begin : xlen_core_error
         $error($sformatf("[Socket] Illegal CORE (%s) for the selected XLEN (%0d)",
                         core_selector_to_string(CORE_SELECTOR), LOCAL_DATA_WIDTH));
@@ -277,6 +277,39 @@ module rv_socket # (
 
             );
         end : core_ibex
+        CORE_MX : begin : core_mx
+
+            custom_mx mx_core (
+                .clk_i           ( clk_i ),
+                .rst_ni          ( core_resetn_internal ),
+                .hart_id_i       ( hart_id ),
+                .boot_addr_i     ( bootaddr_i ),
+                .instr_mem_req   ( core_instr_mem_req   ),
+                .instr_mem_gnt   ( core_instr_mem_gnt   ),
+                .instr_mem_valid ( core_instr_mem_valid ),
+                .instr_mem_addr  ( core_instr_mem_addr  ),
+                .instr_mem_be    ( core_instr_mem_be    ),
+                .instr_mem_we    ( core_instr_mem_we    ),
+                .instr_mem_wdata ( core_instr_mem_wdata ),
+                .instr_mem_rdata ( core_instr_mem_rdata ),
+                .instr_mem_error ( core_instr_mem_error ),
+                .data_mem_req    ( core_data_mem_req    ),
+                .data_mem_valid  ( core_data_mem_valid  ),
+                .data_mem_gnt    ( core_data_mem_gnt    ),
+                .data_mem_we     ( core_data_mem_we     ),
+                .data_mem_be     ( core_data_mem_be     ),
+                .data_mem_addr   ( core_data_mem_addr   ),
+                .data_mem_wdata  ( core_data_mem_wdata  ),
+                .data_mem_rdata  ( core_data_mem_rdata  ),
+                .data_mem_error  ( core_data_mem_error  ),
+                .irq_software_i  ( 1'b0 ),
+                .irq_timer_i     ( 1'b0 ),
+                .irq_external_i  ( 1'b0 ),
+                .irq_fast_i      ( '0 ),
+                .irq_nm_i        ( 1'b0 ),
+                .debug_req_i     ( 1'b0 )
+            );
+        end : core_mx
         CORE_MICROBLAZEV_RV32 : begin : xlnx_microblazev_rv32
 
             // Tie-off unused signals

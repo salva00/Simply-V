@@ -60,6 +60,7 @@ package simplyv_pkg;
         CORE_PICORV32,
         CORE_CV32E40P,
         CORE_IBEX,
+        CORE_MX,
         CORE_MICROBLAZEV_RV32,
         CORE_DUAL_MICROBLAZEV_RV32,
         // 64-bits Cores
@@ -112,6 +113,7 @@ package simplyv_pkg;
             CORE_PICORV32:               return "CORE_PICORV32";
             CORE_CV32E40P:               return "CORE_CV32E40P";
             CORE_IBEX:                   return "CORE_IBEX";
+            CORE_MX:                     return "CORE_MX";
             CORE_MICROBLAZEV_RV32:       return "CORE_MICROBLAZEV_RV32";
             CORE_MICROBLAZEV_RV64:       return "CORE_MICROBLAZEV_RV64";
             CORE_DUAL_MICROBLAZEV_RV32:  return "CORE_DUAL_MICROBLAZEV_RV32";

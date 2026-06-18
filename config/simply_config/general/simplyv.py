@@ -47,7 +47,8 @@ class SimplyV(metaclass=Singleton):
 			"CORE_MICROBLAZEV_RV64",
 			"CORE_DUAL_MICROBLAZEV_RV32",
 			"CORE_CV64A6",
-			"CORE_CV64A6_ARA"
+			"CORE_CV64A6_ARA",
+			"CORE_MX",
 		)
 
 	def __init__(self, system_data: dict):
@@ -205,6 +206,12 @@ class SimplyV(metaclass=Singleton):
 				),
 			"CORE_PICORV32": (
 					"custom_picorv32",
+					"custom_axi_from_mem",
+					"custom_clint",
+					"custom_rv_plic",
+				),
+			"CORE_MX": (
+					"custom_mx",
 					"custom_axi_from_mem",
 					"custom_clint",
 					"custom_rv_plic",

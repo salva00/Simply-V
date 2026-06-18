@@ -26,6 +26,7 @@ TEST    ?= smoke
 # Short name -> CORE_SELECTOR via a per-core var (no parser).
 CORE ?=
 CORE_SELECTOR_ibex     := CORE_IBEX
+CORE_SELECTOR_mx       := CORE_MX
 CORE_SELECTOR_cv32e40p := CORE_CV32E40P
 CORE_SELECTOR_picorv32 := CORE_PICORV32
 CORE_SELECTOR_cv64a6     := CORE_CV64A6

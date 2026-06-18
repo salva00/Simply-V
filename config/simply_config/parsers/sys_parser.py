@@ -32,7 +32,7 @@ class Sys_Parser(Parser):
 				(d["CORE_SELECTOR"] in ["CORE_MICROBLAZEV_RV64", "CORE_CV64A6_ARA", "CORE_CV64A6"]
 										and d["XLEN"] != 64) or \
 				(d["CORE_SELECTOR"] in ["CORE_MICROBLAZEV_RV32", "CORE_PICORV32", "CORE_CV32E40P",
-										"CORE_IBEX", "CORE_DUAL_MICROBLAZEV_RV32"] \
+										"CORE_IBEX", "CORE_MX", "CORE_DUAL_MICROBLAZEV_RV32"] \
 										and d["XLEN"] != 32),
 				Conflict_Error("XLEN", "CORE_SELECTOR")
 				),
