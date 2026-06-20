@@ -1,6 +1,14 @@
---- a/CORE.v	2026-06-18 20:38:03.825298417 +0200
-+++ b/CORE.v	2026-06-18 20:41:23.015096777 +0200
-@@ -173,6 +173,10 @@
+--- a/CORE.v
++++ b/CORE.v
+@@ -166,13 +166,17 @@
+ module CORE #(
+     parameter ID                          = 0,                        // core identifier
+     parameter  SIM_DEBUG_MEM_ACCESS_ENABLE = "no",             // degug in simulation mode enable parameter
+-    parameter  SIM_DEBUG_PIPELINE_ENABLE   = "yes",             // debug in simulation mode enable parameter
++    parameter  SIM_DEBUG_PIPELINE_ENABLE   = "no",              // debug in simulation mode enable parameter
+     parameter  SIM_DEBUG_REGISTER_ENABLE   = "no"              // debug in simulation mode enable parameter
+   )(
+     input                          clk_i,                             // clock signal
      input                          rst_i,                             // reset signal
      input                          clk_gated_i,                       // clock gated signal
      //
@@ -11,7 +19,17 @@
      output [31:0]                  addr_o,                            // Address to read from/write to
      output [31:0]                  data_o,                            // Data to write into memory
      output                         read_o,                            // read signal
-@@ -270,6 +274,8 @@
+@@ -182,7 +186,8 @@
+     output [3:0]                   be_o,                              // byte enables
+     output [5:0]                   vl_o,                              // vector length signal to memory
+     //
+-    input                          valid_i,                           // valid signal
++    input                          valid_i,                           // read-data valid signal
++    input                          wack_i,                            // write-acknowledge (separate from read-data valid)
+     input [31:0]                   data_i                             // input data from memory
+     );
+ 
+@@ -270,6 +275,8 @@
    // csr signals
    wire         clk_gated_to_csr_w /* verilator public */;          // clock gated signal to the CSR module
    wire [31:0]  csr_data_from_csr_w /* verilator public */;         // csr data
@@ -20,7 +38,7 @@
    wire [1:0]   priv_mode_from_csr_w /* verilator public */;        // privilege mode output from CSR
    wire         satp_write_from_csr_w /* verilator public */;       // satp write pulse from CSR (for TLB flush)
  
-@@ -625,6 +631,8 @@
+@@ -625,6 +632,8 @@
      .csr_data_i            ( csr_data_from_exm_w[31:0]       ),   // csr data at EXM stage (mepc for ecall/mret, sepc for sret)
      .page_fault_i          ( page_fault_m_w                  ),   // page fault at M stage (IMMU or DMMU)
      .stvec_i               ( stvec_from_csr_w                ),   // stvec: supervisor trap handler address
@@ -29,7 +47,7 @@
      .pc_addr_i             ( pc_from_pcadder_w[31:0]         ),   // Input: PC from PCADDER
      .pc_o                  ( addr_from_mxpc_w[31:0]          )    // Output: PC address to PCreg
    );
-@@ -858,6 +866,13 @@
+@@ -858,6 +867,13 @@
      .dmmu_store_fault_i ( page_fault_store_m_w        ),  // store page fault (cause 15)
      .fault_pc_i         ( fault_pc_m_w                ),  // PC of faulting instruction
      .fault_vaddr_i      ( fault_vaddr_m_w             ),  // faulting virtual address
@@ -43,7 +61,7 @@
      .priv_mode_o        ( priv_mode_from_csr_w        ),
      .satp_write_o       ( satp_write_from_csr_w       ),
      .satp_o             ( satp_from_csr_w             ),
-@@ -1638,6 +1653,7 @@
+@@ -1638,6 +1654,7 @@
      // MMU stall and page fault
      .mmu_stall_i            ( mmu_stall_w                          ),   // MMU stall (TLB miss or page walk)
      .page_fault_m_i         ( page_fault_m_w                       ),   // page fault at M stage
@@ -51,8 +69,18 @@
      // CSR forwarding
      .csr_read_m_i           ( mxdata_sel_from_exm_w == 2'd3        ),   // CSR read at M stage (mxdata_sel==3 means CSR data goes to rd)
      // MX systolic array
---- a/CSR.v	2026-06-18 20:38:03.825368043 +0200
-+++ b/CSR.v	2026-06-18 20:40:43.043980470 +0200
+@@ -1680,7 +1697,8 @@
+     .l1d_word_index_o     ( word_index_from_mem_to_l1d_w     ),   // L1D interface: word index to memory
+     // Keep mem_valid_i always visible to MEMACCESS: responses from transactions
+     // already in flight (L1I/L1D/page-walk) must not be dropped during DMA.
+-    .mem_valid_i          ( valid_i              ),   // Memory interface //valid_i
++    .mem_valid_i          ( valid_i              ),   // Memory interface: read-data valid
++    .mem_wack_i           ( wack_i                       ),   // Memory interface: write acknowledge (separate channel)
+     .mem_data_i           ( data_i                       ),   // Memory interface: data from memory
+     .mem_addr_o           ( memaccess_addr_w             ),   // Memory interface: address to memory
+     .mem_data_o           ( memaccess_data_w             ),   // Memory interface: data to memory
+--- a/CSR.v
++++ b/CSR.v
 @@ -82,6 +82,15 @@
      input         dmmu_store_fault_i,               // store/AMO page fault (cause 15)
      input  [31:0] fault_pc_i,                       // PC of faulting instruction (sepc)
@@ -69,13 +97,10 @@
      // Privilege mode output
      output [1:0]  priv_mode_o /* verilator public */,   // current privilege mode output
      // SATP flush signal (for TLB invalidation)
-@@ -178,6 +187,28 @@
+@@ -178,6 +187,30 @@
    assign stvec_o       = stvec_r;
    // Privilege mode output
    assign priv_mode_o = priv_mode_r;
-+  // mtvec output (machine trap handler, for interrupt redirect in MXPC)
-+  assign mtvec_o = mtvec_r;
-+
 +  // ===========================================================================
 +  // Interrupt trap-entry decision (combinational), mirroring the page-fault path
 +  // ---------------------------------------------------------------------------
@@ -95,10 +120,15 @@
 +                              irq_pending_w[7]  ? 4'd7  :     // MTI: machine timer
 +                                                  4'd0;
 +  assign irq_take_o = irq_any_w;
++  // mtvec output (machine trap handler, for interrupt redirect in MXPC).
++  // Vectored mode (mtvec[0]=1): jump to base + 4*cause per RISC-V Priv spec.
++  // Direct  mode (mtvec[0]=0): jump to base.
++  assign mtvec_o = mtvec_r[0] ? ({mtvec_r[31:2], 2'b00} + {26'b0, irq_cause_w, 2'b00}) :
++                                 {mtvec_r[31:2], 2'b00};
    // read mux: returns the value of the requested CSR (with write-through for same-cycle WSC)
    assign data_o = wsc_mstatus_w & read_mstatus_w ? new_value_w :
                    read_mstatus_w                 ? mstatus_r   :
-@@ -256,7 +287,16 @@
+@@ -256,7 +289,16 @@
         // instret increments when pipeline is active (not stalled)
         instret_r <= instret_r + 64'd1;
         // Privilege mode transitions
@@ -116,7 +146,7 @@
           // Page fault: trap to S-mode (supervisor)
           // Save SIE to SPIE, then disable interrupts (SIE=0)
           sstatus_r[5]  <= sstatus_r[1];             // SPIE = SIE
-@@ -316,6 +356,14 @@
+@@ -316,6 +358,14 @@
           if (wsc_fflags_w)  fcsr_r    <= {24'b0, fcsr_r[7:5], new_value_w[4:0]};
         end
       end
@@ -131,8 +161,8 @@
      end
    end
  
---- a/MXPC.v	2026-06-18 20:38:03.825396201 +0200
-+++ b/MXPC.v	2026-06-18 20:39:16.828886377 +0200
+--- a/MXPC.v
++++ b/MXPC.v
 @@ -52,12 +52,15 @@
    input [31:0]  csr_data_i /* verilator public */,             // csr data at EXM stage (mepc for mret/ecall, sepc for sret)
    input         page_fault_i /* verilator public */,           // page fault at M stage (IMMU or DMMU)
@@ -151,8 +181,8 @@
                ecall_instr_i | mret_instr_i | sret_instr_i ? csr_data_i         :   // ecall/mret/sret instruction at EX/M stage
                jal_instr_i                               ? alu_data_i           :   // jal/jalr instruction at EX/M stage
                (~pred_i &  cond_i)                       ? alu_data_i           :   // misspredict, the instruction at EX/M has a taken branch
---- a/HAZARDS.v	2026-06-18 20:38:03.825419834 +0200
-+++ b/HAZARDS.v	2026-06-18 20:39:06.011125501 +0200
+--- a/HAZARDS.v
++++ b/HAZARDS.v
 @@ -78,6 +78,8 @@
    input        mmu_stall_i,          // combined MMU stall (IMMU | DMMU)
    // Page fault input (from M stage, IMMU or DMMU)

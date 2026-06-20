@@ -1,6 +1,16 @@
 --- a/MEMACCESS.v
 +++ b/MEMACCESS.v
-@@ -350,10 +350,17 @@
+@@ -77,7 +77,8 @@
+   output            mem_read_block_o /* verilator public */,  // output read block signal to memory
+   output            mem_read_vector_o /* verilator public */, // output read block signal to memory
+   output            mem_write_o /* verilator public */,       // output write signal to memory
+-  input             mem_valid_i /* verilator public */,       // valid signal from memory
++  input             mem_valid_i /* verilator public */,       // read-data valid signal from memory
++  input             mem_wack_i /* verilator public */,        // write-acknowledge from memory (separate from read valid)
+   input [31:0]      mem_data_i /* verilator public */         // data from memory
+ );
+ 
+@@ -350,10 +351,21 @@
          end
        end
  
@@ -9,11 +19,15 @@
 +      // wait for mem_valid_i. On a read we forward the data+valid pulse to L1D
 +      // (which stalls in READ_MEM_NCA until data_valid_from_mem_i); writes also wait
 +      // for mem_valid_i (the bridge pulses it on write completion) before releasing.
++      // Reads complete on mem_valid_i (read-data valid); writes complete on
++      // mem_wack_i (the bridge's dedicated write-acknowledge). Using the right
++      // channel per direction prevents a write-ack from being consumed as read
++      // data and vice-versa.
        if (triggered_l1d_word_access_r) begin
 -        if (pending_l1d_word_access_r) begin
 -          pending_l1d_word_access_r <= 0;
 -          triggered_l1d_word_access_r <= 0;
-+        if (mem_valid_i) begin
++        if ((l1d_word_read_r & mem_valid_i) | (l1d_word_write_r & mem_wack_i)) begin
 +          l1d_valid_o <= l1d_word_read_r;
 +          l1d_data_o  <= mem_data_i;
 +          pending_l1d_word_access_r   <= 1'b0;

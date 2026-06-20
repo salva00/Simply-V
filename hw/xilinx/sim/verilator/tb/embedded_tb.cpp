@@ -52,7 +52,7 @@ class UartTx {
 public:
     // Idle bit-periods inserted between consecutive frames so the firmware's
     // AXI-Lite poll-and-read loop can drain the 1-deep RX register in time.
-    static constexpr int kGapBits = 40;
+    static constexpr int kGapBits = 600;
 
     explicit UartTx(int cycles_per_bit) : cycles_per_bit_(cycles_per_bit) {}
 
@@ -126,7 +126,7 @@ static constexpr int kOversample = 1;
 // SIM_UART_CYCLES_PER_BIT samples/bit of pure serialisation, plus the program's
 // boot + crossbar latency (CUT_ALL_PORTS pipelining) and UART polling, so allow
 // millions.
-static constexpr long kMaxPosedges = 8'000'000L;
+static constexpr long kMaxPosedges = 30'000'000L;
 
 // gpio_in toggle cadence (sys_clock_i posedges) for the interrupts example. Each
 // toggle generates one GPIO_IN PLIC interrupt; period set so several fire over the

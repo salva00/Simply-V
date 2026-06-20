@@ -6,7 +6,7 @@ module tb_mx_mem_bridge;
   // bridge MX side
   logic core_read, core_read_block, core_read_vector, core_write;
   logic [31:0] core_addr, core_wdata; logic [3:0] core_be; logic [4:0] core_vl;
-  logic core_valid; logic [31:0] core_rdata; logic core_wait;
+  logic core_valid; logic core_wack; logic [31:0] core_rdata; logic core_wait;
   // bridge bus side
   logic m_req, m_gnt, m_valid, m_we; logic [31:0] m_addr, m_rdata, m_wdata; logic [3:0] m_be; logic m_err;
 
@@ -14,7 +14,7 @@ module tb_mx_mem_bridge;
     .core_read_i(core_read), .core_read_block_i(core_read_block),
     .core_read_vector_i(core_read_vector), .core_write_i(core_write),
     .core_addr_i(core_addr), .core_wdata_i(core_wdata), .core_be_i(core_be),
-    .core_vl_i(core_vl), .core_valid_o(core_valid), .core_rdata_o(core_rdata),
+    .core_vl_i(core_vl), .core_valid_o(core_valid), .core_wack_o(core_wack), .core_rdata_o(core_rdata),
     .core_wait_o(core_wait),
     .m_mem_req(m_req), .m_mem_gnt(m_gnt), .m_mem_valid(m_valid),
     .m_mem_addr(m_addr), .m_mem_rdata(m_rdata), .m_mem_wdata(m_wdata),

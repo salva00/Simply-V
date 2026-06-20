@@ -27,7 +27,7 @@ module custom_top_wrapper #(
     assign instr_mem_be    = '0;
 
     // core <-> bridge wires
-    logic        c_read, c_read_block, c_read_vector, c_write, c_valid, c_wait;
+    logic        c_read, c_read_block, c_read_vector, c_write, c_valid, c_wack, c_wait;
     logic [31:0] c_addr, c_wdata, c_rdata;
     logic [3:0]  c_be;
     logic [5:0]  c_vl;
@@ -48,6 +48,7 @@ module custom_top_wrapper #(
         .be_o         ( c_be ),
         .vl_o         ( c_vl ),
         .valid_i      ( c_valid ),
+        .wack_i       ( c_wack ),            // write-acknowledge (separate from read-data valid)
         .data_i       ( c_rdata )
     );
 
@@ -56,7 +57,7 @@ module custom_top_wrapper #(
         .core_read_i(c_read), .core_read_block_i(c_read_block),
         .core_read_vector_i(c_read_vector), .core_write_i(c_write),
         .core_addr_i(c_addr), .core_wdata_i(c_wdata), .core_be_i(c_be),
-        .core_vl_i(c_vl[4:0]), .core_valid_o(c_valid), .core_rdata_o(c_rdata),
+        .core_vl_i(c_vl[4:0]), .core_valid_o(c_valid), .core_wack_o(c_wack), .core_rdata_o(c_rdata),
         .core_wait_o(c_wait),
         .m_mem_req(data_mem_req), .m_mem_gnt(data_mem_gnt), .m_mem_valid(data_mem_valid),
         .m_mem_addr(data_mem_addr), .m_mem_rdata(data_mem_rdata), .m_mem_wdata(data_mem_wdata),
