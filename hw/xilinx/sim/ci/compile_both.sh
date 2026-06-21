@@ -27,11 +27,15 @@ make -C hw/xilinx sim BACKEND=verilator TEST=smoke
 # idle Ara netlist is evaluated every cycle) and adds no unique coverage — CDMA mem2mem never
 # touches the vector unit, and the 64-bit CDMA path is already asserted by cv64a6 (scalar). Set
 # SIM_CI_FULL=1 to add it back (the manual run is always available).
-for c in ibex cv32e40p picorv32 cv64a6 cv64a6_ara; do
+for c in ibex cv32e40p picorv32 cv64a6 cv64a6_ara mx; do
   case "$c" in
     ibex|cv64a6) tests="hello_world echo interrupts xlnx_cdma_examples" ;;
     cv64a6_ara)  tests="hello_world echo interrupts"
                  [ "${SIM_CI_FULL:-0}" = 1 ] && tests="${tests} xlnx_cdma_examples" ;;
+    # mx (UPV/GAP VC0): hello_world + echo green. interrupts is held back — the
+    # vendored L1D evicts a dirty line without writeback on a same-index conflict,
+    # hanging printf("%u") before IRQs are even enabled (see docs residual-work).
+    mx)          tests="hello_world echo" ;;
     *)           tests="hello_world" ;;
   esac
   for t in $tests; do
