@@ -2,7 +2,7 @@
 # Author: Salvatore Bramante <salvatore.bramante@yahoo.it>
 # Description: local CI. Config flow unit tests, sim config regeneration, then the
 #              Verilator benches and the embedded SoC tests.
-# Vendor (Questa) is pending license — not in CI yet.
+# Vendor backends (xsim, manual; Questa, pending license) are not in CI.
 set -euo pipefail
 
 : "${SIMPLYV_ROOT_DIR:?source settings.sh first}"
@@ -19,6 +19,17 @@ echo "== [CI] mode: $([ "${SIM_CI_FULL:-0}" = 1 ] && echo 'FULL (incl. CDMA on a
 echo "== [CI] Verilator TEST=smoke (regenerates the sim config) + elaboration gate =="
 make -C hw/xilinx sim BACKEND=verilator TEST=smoke
 make -C hw/xilinx sim_elab_embedded
+
+echo "== [CI] crossbar bench (32/64-bit) =="
+make -C hw/xilinx sim_verilator_xbar
+make -C hw/xilinx sim_verilator_xbar XBAR_DW=64
+make -C hw/xilinx sim_verilator_axilite_xbar
+if [ -n "${XILINX_VIVADO:-}" ]; then
+  echo "== [CI] crossbar benches with the AXI4 protocol checker =="
+  make -C hw/xilinx sim_verilator_xbar AXI4PC=1
+  make -C hw/xilinx sim_verilator_xbar XBAR_DW=64 AXI4PC=1
+  make -C hw/xilinx sim_verilator_axilite_xbar AXI4PC=1
+fi
 
 # Explicit core per run (CI no longer depends on the user's config_system.csv). ibex and the
 # 64-bit cores assert the full embedded suite; the rv32 non-default cores assert hello_world.

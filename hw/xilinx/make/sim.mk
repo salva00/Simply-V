@@ -1,6 +1,7 @@
 # Description: Simulation targets — dual backend (Verilator + xsim).
 # Always invoke via the main Makefile (`make -C hw/xilinx ...`) so that
 # config.mk and environment.mk are included.
+# See hw/xilinx/sim/README.md and hw/xilinx/sim/sim_manifest.md.
 
 # All sim paths derive from XILINX_ROOT — no extra env vars in settings.sh
 XILINX_SIM_ROOT           := ${XILINX_ROOT}/sim
@@ -330,6 +331,20 @@ sim_xsim_xbar:
 	cd ${XS_XBAR_DIR} && ${XSIM} xbar_vip -R --log ${XS_XBAR_DIR}/xbar_vip.log
 	grep -q '\[XBAR-VIP\] PASS' ${XS_XBAR_DIR}/xbar_vip.log && ! grep -qE 'AXI4_ERR|AXI4_REC|Fatal' ${XS_XBAR_DIR}/xbar_vip.log
 .PHONY: sim_xsim_xbar
+
+# Out-of-context Vivado elaboration of the in-tree crossbar RTL (CUSTOM branch
+# of the wrappers included): a parse/elaboration gate, no project, no IP.
+xbar_synth_check:
+	${XILINX_VIVADO_BATCH} -source ${XILINX_ROOT}/synth/tcl/xbar_synth_check.tcl
+.PHONY: xbar_synth_check
+
+# RTL elaboration of the full simplyv top with the Xilinx IPs (XBAR_IMPL from config.mk).
+# Needs the IPs (make ips).
+SIMPLYV_ELAB_DIR := ${XILINX_SIM_BUILD_DIR}/simplyv_elab
+simplyv_elab_check:
+	mkdir -p ${SIMPLYV_ELAB_DIR}
+	cd ${SIMPLYV_ELAB_DIR} && ${XILINX_VIVADO_BATCH} -source ${XILINX_SYNTH_TCL_ROOT}/simplyv_elab_check.tcl
+.PHONY: simplyv_elab_check
 
 sim_clean:
 	rm -rf ${XILINX_SIM_BUILD_DIR}
