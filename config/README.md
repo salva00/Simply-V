@@ -35,7 +35,7 @@ The following table details the supported properties.
 
 | Name  | Description | Values
 |-|-|-|
-| CORE_SELECTOR         | Select target RV core       | CORE_PICORV32, CORE_CV32E40P, CORE_IBEX, CORE_MICROBLAZEV_RV32, CORE_DUAL_MICROBLAZEV_RV32, CORE_MICROBLAZEV_RV64, CORE_CV64A6, CORE_CV64A6_ARA
+| CORE_SELECTOR         | Select target RV core       | CORE_PICORV32, CORE_CV32E40P, CORE_IBEX, CORE_MICROBLAZEV_RV32, CORE_DUAL_MICROBLAZEV_RV32, CORE_MICROBLAZEV_RV64, CORE_CV64A6, CORE_CV64A6_ARA, CORE_MX (simulation only)
 | XBAR_IMPL             | Select the MBUS/PBUS crossbar implementation | XILINX (default, uses the Xilinx axi_crossbar IP), CUSTOM (in-tree RTL, `simplyv_axi_xbar`/`simplyv_axilite_xbar`)
 | VIO_RESETN_DEFAULT    | Select value for VIO resetn | [0,1]
 | XLEN                  | Defines Bus DATA_WIDTH, supported cores and Toolchain version | [32,64]
@@ -49,12 +49,13 @@ The following table details the supported properties.
 ### Notes for CORE_SELECTOR
 **XLEN** configuration must match the selected `CORE_SELECTOR`:
 - `XLEN=64` requires `CORE_SELECTOR in {CORE_MICROBLAZEV_RV64, CORE_CV64A6}`
-- `XLEN=32` requires `CORE_SELECTOR in {CORE_PICORV32, CORE_CV32E40P, CORE_IBEX, CORE_MICROBLAZEV_RV32, CORE_DUAL_MICROBLAZEV_RV32}`
+- `XLEN=32` requires `CORE_SELECTOR in {CORE_PICORV32, CORE_CV32E40P, CORE_IBEX, CORE_MX, CORE_MICROBLAZEV_RV32, CORE_DUAL_MICROBLAZEV_RV32}`
 
 Additional notes:
 - `CORE_SELECTOR = CORE_PICORV32`: the external PicoRV32 IP is currently bugged in CSR support. Any code running with CORE_PICORV32 must not perform any CSR operation.
 - `CORE_SELECTOR = CORE_DUAL_MICROBLAZEV_RV32` requires two additional `MASTER_NAMES` into `config_main_bus.csv`, namely `RV_SOCKET_DATA1 RV_SOCKET_INSTR1`.
 - `CORE_SELECTOR = CORE_CV64A6_ARA` supports a maximum MAIN_CLOCK_DOMAIN frequency of 50 MHz.
+- `CORE_SELECTOR = CORE_MX` is simulation only (Verilator): there is no FPGA IP for it and the FPGA build stops with an error. Its sources are fetched only by `make units MX=1`, see `hw/xilinx/sim/README.md`.
 
 ### VIO resetn default
 The `VIO_RESETN_DEFAULT` parameter controls the programming-time value of core reset.

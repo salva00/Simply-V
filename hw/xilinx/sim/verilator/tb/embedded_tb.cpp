@@ -4,6 +4,8 @@
 //              uart_tx_o and compares it to a golden file: "[EMB] PASS" / exit 0
 //              on match, "[EMB] FAIL" / exit 1 otherwise. sys_reset_i is active
 //              high; the sim clk_wiz drives every clock from sys_clock_i.
+//              +UART_GAP_BITS=<n> and +MAX_POSEDGES=<n> override the RX frame
+//              gap and the run limit (sim.mk sets them for CORE_MX).
 
 #include "Vsimplyv.h"
 #include "verilated.h"
@@ -24,15 +26,14 @@
 
 // UART transmitter: serialises the stimulus onto uart_rx_i (8N1, one step()
 // per sys_clock_i posedge), started by begin_tx() once the prompt is seen.
-// The sim model's RX register is 1-deep, so frames are spaced by kGapBits idle
+// The sim model's RX register is 1-deep, so frames are spaced by gap_bits idle
 // bit periods to let the polling firmware drain each byte.
 class UartTx {
 public:
-    // Idle bit-periods inserted between consecutive frames so the firmware's
-    // AXI-Lite poll-and-read loop can drain the 1-deep RX register in time.
-    static constexpr int kGapBits = 40;
-
-    explicit UartTx(int cycles_per_bit) : cycles_per_bit_(cycles_per_bit) {}
+    // gap_bits: idle bit-periods inserted between consecutive frames so the
+    // firmware's AXI-Lite poll-and-read loop can drain the 1-deep RX register in time.
+    UartTx(int cycles_per_bit, int gap_bits)
+        : cycles_per_bit_(cycles_per_bit), gap_bits_(gap_bits) {}
 
     // Load the stimulus to send (called once, after the prompt is seen).
     void begin_tx(const std::string& s) {
@@ -47,7 +48,7 @@ public:
     // Advance one sys_clock_i posedge; return the level to drive on uart_rx_i.
     uint8_t step() {
         if (!active_) return 1;          // idle high
-        // Inter-byte idle gap: hold the line high for kGapBits bit-periods.
+        // Inter-byte idle gap: hold the line high for gap_bits_ bit-periods.
         if (gap_left_ > 0) {
             if (++cycle_ctr_ >= cycles_per_bit_) {
                 cycle_ctr_ = 0;
@@ -65,7 +66,7 @@ public:
                     return 1;
                 }
                 load_frame();
-                gap_left_ = kGapBits;     // idle before the next frame
+                gap_left_ = gap_bits_;    // idle before the next frame
             }
         }
         return level;
@@ -87,6 +88,7 @@ private:
     }
 
     const int   cycles_per_bit_;
+    const int   gap_bits_;
     std::string data_;
     size_t      byte_idx_  = 0;
     uint8_t     cur_byte_  = 0;
@@ -104,6 +106,8 @@ static constexpr int kOversample = 1;
 // boot + crossbar latency (CUT_ALL_PORTS pipelining) and UART polling, so allow
 // millions.
 static constexpr long kMaxPosedges = 8'000'000L;
+// Default RX inter-frame gap (bit periods).
+static constexpr int kGapBits = 40;
 
 // gpio_in toggle cadence (sys_clock_i posedges) for the interrupts example. Each
 // toggle generates one GPIO_IN PLIC interrupt; period set so several fire over the
@@ -139,9 +143,15 @@ int main(int argc, char** argv) {
     const char* golden_path   = nullptr;
     const char* stimulus_path = nullptr;
     const char* prompt        = "Please enter a string";
+    int         gap_bits      = kGapBits;
+    long        max_posedges  = kMaxPosedges;
     for (int i = 1; i < argc; ++i) {
         if (std::strncmp(argv[i], "+STIMULUS=", 10) == 0)
             stimulus_path = argv[i] + 10;
+        else if (std::strncmp(argv[i], "+UART_GAP_BITS=", 15) == 0)
+            gap_bits = std::atoi(argv[i] + 15);
+        else if (std::strncmp(argv[i], "+MAX_POSEDGES=", 14) == 0)
+            max_posedges = std::atol(argv[i] + 14);
         else if (argv[i][0] != '+' && argv[i][0] != '-')
             golden_path = argv[i];
     }
@@ -169,7 +179,7 @@ int main(int argc, char** argv) {
 
     Vsimplyv* top = new Vsimplyv;
     UartRx uart(kOversample);
-    UartTx tx_inject(SIM_UART_CYCLES_PER_BIT * kOversample);
+    UartTx tx_inject(SIM_UART_CYCLES_PER_BIT * kOversample, gap_bits);
     bool   tx_started = false;
 
     // Static inputs.
@@ -191,7 +201,7 @@ int main(int argc, char** argv) {
 
     // --- Run ---
     bool passed = false;
-    for (long n = 0; n < kMaxPosedges && !Verilated::gotFinish(); ++n) {
+    for (long n = 0; n < max_posedges && !Verilated::gotFinish(); ++n) {
         // Start injecting the stimulus once the prompt appears in the TX stream
         // (TX-sync, not a blind delay). Drive uart_rx_i one bit-level per
         // posedge from the harness UART transmitter.

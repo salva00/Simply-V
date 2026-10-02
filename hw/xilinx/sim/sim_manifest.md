@@ -58,13 +58,14 @@ and `riscv64-unknown-elf-*`) on `PATH` and an active Python env (`python3` → s
 
 CI runs `hello_world`, `echo`, `interrupts` and `xlnx_cdma_examples` on ibex and cv64a6, the
 same without `xlnx_cdma_examples` on cv64a6_ara (`SIM_CI_FULL=1` adds it), and `hello_world`
-only on cv32e40p and picorv32.
+only on cv32e40p and picorv32; `hello_world` and `echo` on mx (see its row).
 
 | Core | XLEN | Notes |
 |---|---|---|
 | ibex | 32 | baseline |
 | cv32e40p | 32 | needed BRAM sim model word-align fix (cv32e40p OBI sends byte addresses) |
 | picorv32 | 32 | needs no-RVC firmware (CORE=picorv32 builds app+libs with C_EXTENSION=N) + crt0 CSR-skip (no standard mtvec/mstatus/mie). COMPRESSED_ISA=0, custom IRQ -> the standard `interrupts` example (CLINT/PLIC -> mtvec) does not run. |
+| mx | 32 | VC0 (GAP, UPV), simulation only (no FPGA IP; fetched by `make units MX=1`). `hello_world` and `echo` only: the vendored L1D drops a dirty line on a same-index conflict, so `interrupts` is excluded (see README). |
 | cv64a6 | 64 | CVA6 scalar; firmware rv64im/lp64 (CORE=cv64a6 builds app+libs with XLEN=64). |
 | cv64a6_ara | 64 | CVA6 + Ara vector unit; same XLEN=64 firmware. Ara CDMA is the slowest run (~25-30 min CPU); CI skips it by default (`SIM_CI_FULL=1` to include). |
 

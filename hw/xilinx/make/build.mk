@@ -2,6 +2,13 @@
 # Author: Stefano Mercogliano <stefano.mercogliano@unina.it>
 # Description: Make target to build Xilinx IPs and bitstream
 
+# CORE_MX has no FPGA IP: simulation only
+ifeq (${CORE_SELECTOR},CORE_MX)
+ifneq ($(filter all bitstream,$(or ${MAKECMDGOALS},all)),)
+$(error CORE_MX is simulation only, there is no FPGA IP for it (use make sim))
+endif
+endif
+
 # Build bitstream from scratch
 bitstream: ips
 	mkdir -p ${XILINX_PROJECT_REPORTS_DIR}

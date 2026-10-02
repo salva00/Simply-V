@@ -25,6 +25,7 @@ TEST    ?= smoke
 # Short name -> CORE_SELECTOR via a per-core var (no parser).
 CORE ?=
 CORE_SELECTOR_ibex     := CORE_IBEX
+CORE_SELECTOR_mx       := CORE_MX
 CORE_SELECTOR_cv32e40p := CORE_CV32E40P
 CORE_SELECTOR_picorv32 := CORE_PICORV32
 CORE_SELECTOR_cv64a6     := CORE_CV64A6
@@ -248,6 +249,8 @@ sim_config_regen:
 	    case "${CORE}" in cv64a6|cv64a6_ara) \
 	        sed -i 's/^XLEN,.*/XLEN,64/' ${CORE_CSV};; esac; \
 	fi
+	if grep -q '^CORE_SELECTOR,CORE_MX' ${ACTIVE_SYSTEM_CSV} && [ ! -d ${HW_UNITS_ROOT}/custom_mx/rtl ]; then \
+	    echo "[sim] CORE_MX needs hw/units/custom_mx/rtl: run make units MX=1"; exit 1; fi
 	${MAKE} -C ${CONFIG_ROOT} config_mbus config_pbus config_sw config_xilinx config_sim \
 	        PYTHON=${PYTHON} INPUT_SYSTEM_CSV=${ACTIVE_SYSTEM_CSV}
 
@@ -268,6 +271,8 @@ SIM_UART_CYCLES_PER_BIT ?= 16
 VL_EMB_TB     := ${XILINX_SIM_ROOT}/verilator/tb/embedded_tb.cpp
 VL_EMB_HEX    := ${TEST_HEX}
 VL_EMB_GOLDEN := ${TEST_GOLDEN}
+# CORE_MX firmware drains the 1-deep UART RX slower and runs longer than the other cores.
+VL_EMB_CORE_ARGS := $(if $(filter CORE_MX,${CORE_SELECTOR}),+UART_GAP_BITS=600 +MAX_POSEDGES=30000000,)
 
 # Full build + run: the ${TEST} program boots from BRAM_0, UART output is compared
 # to the golden by the C++ TB ([EMB] PASS / exit 0 on match, [EMB] FAIL / exit 1).
@@ -284,7 +289,7 @@ sim_verilator_embedded: ${TEST_HEX}
 		-f ${VL_EMB_FLIST} \
 		${VL_EMB_TB} \
 		-CFLAGS "-I${XILINX_SIM_ROOT}/verilator -DSIM_UART_CYCLES_PER_BIT=${SIM_UART_CYCLES_PER_BIT}"
-	${VL_EMB_DIR}/Vsimplyv +BRAM0_INIT=${VL_EMB_HEX} ${TEST_STIM_ARG} ${VL_EMB_GOLDEN}
+	${VL_EMB_DIR}/Vsimplyv +BRAM0_INIT=${VL_EMB_HEX} ${TEST_STIM_ARG} ${VL_EMB_CORE_ARGS} ${VL_EMB_GOLDEN}
 
 .PHONY: sim_verilator_embedded
 
