@@ -16,6 +16,7 @@
 
 import os
 import re
+import shutil
 from buses.nonleafbus import NonLeafBus
 from .error import Conflict_Error, Unsupported_Value_Error
 from templates.dump_template import Dump_Template
@@ -187,14 +188,32 @@ class SimplyV(metaclass=Singleton):
 		return False
 
 
-	# Units of the ibex cone compiled standalone for the Verilator backend
-	SIM_IBEX_CONE_UNITS = (
-			"custom_ibex",
-			"custom_axi_from_mem",
-			"custom_rv32_dbg_bscane",
-			"custom_clint",
-			"custom_rv_plic",
-		)
+	# Per-core sim cone: units compiled standalone for the Verilator backend,
+	# keyed by CORE_SELECTOR. Plain dict lookup, no factory/class.
+	# picorv32 omits custom_rv32_dbg_bscane (rv_socket.sv gates the debug module
+	# to {CV32E40P, IBEX}, so picorv32 never instantiates it).
+	SIM_CONE_UNITS = {
+			"CORE_IBEX": (
+					"custom_ibex",
+					"custom_axi_from_mem",
+					"custom_rv32_dbg_bscane",
+					"custom_clint",
+					"custom_rv_plic",
+				),
+			"CORE_CV32E40P": (
+					"custom_cv32e40p",
+					"custom_axi_from_mem",
+					"custom_rv32_dbg_bscane",
+					"custom_clint",
+					"custom_rv_plic",
+				),
+			"CORE_PICORV32": (
+					"custom_picorv32",
+					"custom_axi_from_mem",
+					"custom_clint",
+					"custom_rv_plic",
+				),
+		}
 
 	# Generate the simulation-flow artifacts (dual backend Verilator/xsim):
 	# sim_defines.svh (mirror of the synth verilog defines) and, when
@@ -215,6 +234,10 @@ class SimplyV(metaclass=Singleton):
 		root = os.environ.get("SIMPLYV_ROOT_DIR")
 		if root is None:
 			raise ValueError("SIMPLYV_ROOT_DIR not set: source settings.sh first")
+
+		if self.CORE_SELECTOR not in self.SIM_CONE_UNITS:
+			raise ValueError(f"{self.CORE_SELECTOR} has no Verilator sim cone; "
+							 f"supported: {', '.join(self.SIM_CONE_UNITS)}")
 
 		# 1. Sim include dir: copy simplyv_axi.svh applying the sim-only token
 		# rename axi_resp_t -> axi_resp_code_t (xsim sim-models already declare
@@ -246,15 +269,49 @@ class SimplyV(metaclass=Singleton):
 		# ...). Emit one renamed copy per unit (custom_top_wrapper -> <unit>) so the
 		# instantiations resolve and the wrappers don't collide.
 		wrappers_dir = os.path.join(siminc_dir, "wrappers")
+		# Clear stale wrappers from a previous core's cone (e.g. custom_ibex.sv
+		# left over when switching to cv32e40p) so they don't get globbed in.
+		shutil.rmtree(wrappers_dir, ignore_errors=True)
 		os.makedirs(wrappers_dir, exist_ok=True)
+		cone_units = self.SIM_CONE_UNITS[self.CORE_SELECTOR]
 		wrapper_files = []
-		for unit in self.SIM_IBEX_CONE_UNITS:
+		for unit in cone_units:
 			src = os.path.join(root, "hw", "units", unit, "custom_top_wrapper.sv")
 			text = Path(src).read_text()
 			text = re.sub(r"\bcustom_top_wrapper\b", unit, text)
 			dest = os.path.join(wrappers_dir, f"{unit}.sv")
 			Path(dest).write_text(text)
 			wrapper_files.append(dest)
+
+		# custom_cv32e40p's FPU includes common_cells/registers.svh and
+		# common_cells/assertions.svh by their pulp-platform subpath; every other
+		# unit's flattened rtl/ uses the bare filename (resolved against its own
+		# unit rtl incdir), which is also the version their macros are written
+		# against. Drop sim-only copies with the subpath stripped so they pick up
+		# that same shared definition instead of pulling in cv32e40p's own,
+		# incompatible vendored copy.
+		fpnew_cc_files = [
+				"fpnew_cast_multi.sv", "fpnew_divsqrt_th_32.sv", "fpnew_fma_multi.sv",
+				"fpnew_noncomp.sv", "fpnew_opgroup_multifmt_slice.sv",
+			]
+		fpnew_fix_files = []
+		fpnew_fix_excludes = []
+		# Clear stale copies from a previous CORE_CV32E40P run unconditionally:
+		# siminc_dir is itself walked as part of rtl_roots, so leftovers would be
+		# picked up even when the current core doesn't need this fix.
+		fpnew_fix_dir = os.path.join(siminc_dir, "fpnew_cc_fix")
+		shutil.rmtree(fpnew_fix_dir, ignore_errors=True)
+		if "custom_cv32e40p" in cone_units:
+			os.makedirs(fpnew_fix_dir, exist_ok=True)
+			for fname in fpnew_cc_files:
+				src = os.path.join(root, "hw", "units", "custom_cv32e40p", "rtl", fname)
+				text = Path(src).read_text()
+				text = text.replace('include "common_cells/registers.svh"', 'include "registers.svh"')
+				text = text.replace('include "common_cells/assertions.svh"', 'include "assertions.svh"')
+				dest = os.path.join(fpnew_fix_dir, fname)
+				Path(dest).write_text(text)
+				fpnew_fix_files.append(dest)
+				fpnew_fix_excludes.append(re.escape(src) + r"$")
 
 		# 4. Filelist: same defines as the .svh (single source of truth), with
 		# XBAR_IMPL forced to CUSTOM (the Verilator cone has no Xilinx IP) plus
@@ -263,7 +320,7 @@ class SimplyV(metaclass=Singleton):
 		defines += ["XBAR_IMPL=XBAR_CUSTOM", "ASSERTS_OFF"]
 
 		unit_rtl_dirs = [os.path.join(root, "hw", "units", u, "rtl")
-						 for u in self.SIM_IBEX_CONE_UNITS]
+						 for u in cone_units]
 		xilinx_rtl = os.path.join(root, "hw", "xilinx", "rtl")
 
 		incdirs = [siminc_dir]
@@ -291,7 +348,7 @@ class SimplyV(metaclass=Singleton):
 				r"virtual_uart\.sv$",				# HPC-only (ifdef HPC in uart_wrapper.sv)
 				r"sim_defines\.svh$",				# header, not a compile unit
 				r"_prelude\.sv$",					# already first via prelude_files
-			]
+			] + fpnew_fix_excludes
 
 		flist_template = Sim_Flist_Template(
 				defines=defines,
@@ -299,7 +356,7 @@ class SimplyV(metaclass=Singleton):
 				prelude_files=[prelude_path],
 				rtl_roots=rtl_roots,
 				exclude_patterns=exclude_patterns,
-				extra_files=wrapper_files,
+				extra_files=wrapper_files + fpnew_fix_files,
 			)
 		flist_template.write_to_file(flist_path)
 
