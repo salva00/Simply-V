@@ -189,7 +189,7 @@ class SimplyV(metaclass=Singleton):
 
 
 	# Per-core sim cone: units compiled standalone for the Verilator backend,
-	# keyed by CORE_SELECTOR. Plain dict lookup, no factory/class.
+	# keyed by CORE_SELECTOR (plain dict lookup, no factory/class).
 	# picorv32 omits custom_rv32_dbg_bscane (rv_socket.sv gates the debug module
 	# to {CV32E40P, IBEX}, so picorv32 never instantiates it).
 	SIM_CONE_UNITS = {
@@ -210,6 +210,20 @@ class SimplyV(metaclass=Singleton):
 			"CORE_PICORV32": (
 					"custom_picorv32",
 					"custom_axi_from_mem",
+					"custom_clint",
+					"custom_rv_plic",
+				),
+			"CORE_CV64A6": (
+					"custom_cv64a6",
+					"custom_axi_from_mem",
+					"custom_rv64_dbg_bscane",
+					"custom_clint",
+					"custom_rv_plic",
+				),
+			"CORE_CV64A6_ARA": (
+					"custom_cv64a6_ara",
+					"custom_axi_from_mem",
+					"custom_rv64_dbg_bscane",
 					"custom_clint",
 					"custom_rv_plic",
 				),
@@ -323,8 +337,24 @@ class SimplyV(metaclass=Singleton):
 						 for u in cone_units]
 		xilinx_rtl = os.path.join(root, "hw", "xilinx", "rtl")
 
+		# cv64a6 flattens the whole CVA6 tree into its rtl/ dir, which includes a
+		# prim-style assertions.svh (2-arg ASSUME_I) that collides by bare name
+		# with the common_cells assertions.svh (3-arg) shipped under
+		# custom_axi_from_mem/rtl and used by addr_decode_dync.sv. The CORE unit
+		# (cone_units[0]) is searched first for `include, so its copy shadows the
+		# sibling each non-core unit expects. CVA6's own files never include the
+		# bare assertions.svh (they use axi_/register_interface_ renamed headers),
+		# so push the CORE unit's rtl incdir LAST: shared bare-name headers
+		# (assertions.svh, registers.svh) then resolve to the non-core unit that
+		# owns them, while CVA6 still finds its uniquely-named headers anywhere.
+		core_unit = cone_units[0]
+		incdir_unit_dirs = (
+				[os.path.join(root, "hw", "units", u, "rtl")
+				 for u in cone_units if u != core_unit]
+				+ [os.path.join(root, "hw", "units", core_unit, "rtl")])
+
 		incdirs = [siminc_dir]
-		incdirs += unit_rtl_dirs
+		incdirs += incdir_unit_dirs
 		incdirs += [
 				xilinx_rtl,
 				headers_root,
@@ -349,6 +379,68 @@ class SimplyV(metaclass=Singleton):
 				r"sim_defines\.svh$",				# header, not a compile unit
 				r"_prelude\.sv$",					# already first via prelude_files
 			] + fpnew_fix_excludes
+
+		# CVA6 (and Ara) vendor their SoC, FPGA-board and TB files flat into rtl/:
+		# unused here, and some reference undefined macros or duplicate peripherals.
+		if self.CORE_SELECTOR in ("CORE_CV64A6", "CORE_CV64A6_ARA"):
+			exclude_patterns += [
+					r"ariane_xilinx\.sv$",				# CVA6 FPGA board top
+					r"ariane_peripherals_xilinx\.sv$",	# CVA6 FPGA peripherals
+					r"fan_ctrl\.sv$",					# CVA6 FPGA fan controller
+					r"/ariane\.sv$",					# CVA6 SoC top (we use cva6 directly)
+					r"rvfi_tracer\.sv$",				# CVA6 TB tracer
+					r"SimDTM\.sv$", r"SimJTAG\.sv$",	# CVA6 TB DPI sim stubs
+					r"/uart\.sv$",						# CVA6 TB uart (we have our own)
+					r"/clint\.sv$",						# CVA6 clint (we use custom_clint)
+					r"axi_lite_interface\.sv$",			# only used by CVA6 clint
+					r"axi_intf\.sv$",					# CVA6 TB AXI interface
+				]
+
+			# Unreachable Ara SRAM/tech-cell alternates that do not lint under Verilator.
+			if self.CORE_SELECTOR == "CORE_CV64A6_ARA":
+				exclude_patterns += [
+						r"/SyncTpRam\.sv$",				# unused dual-port SRAM (bad pragma)
+						# Dead axi_mem_if BRAM-logger cluster (top = AxiBramLogger, 0
+						# instantiations) importing a non-vendored CfMath package.
+						r"/AxiBramLogger\.sv$",
+						r"/BramLogger\.sv$",
+						r"/BramDwc\.sv$",
+						r"/TdpBramArray\.sv$",
+						# xpm-based tc_sram variant: resolve tc_sram to the behavioral model.
+						r"/tc_sram_xilinx\.sv$",
+					]
+
+			# CVA6 vendors its own, pin-incompatible copy of the cells the SoC units
+			# also ship. Drop every core-unit file whose declared names all exist in
+			# a non-core unit, so shared names resolve to the SoC copy.
+			core_rtl = os.path.join(root, "hw", "units", core_unit, "rtl")
+			noncore_rtl = [os.path.join(root, "hw", "units", u, "rtl")
+						   for u in cone_units if u != core_unit]
+			decl_re = re.compile(r"^\s*(?:module|package|interface)\s+(\w+)", re.M)
+
+			def _decls(path):
+				try:
+					return set(decl_re.findall(
+						Path(path).read_text(encoding="utf-8", errors="ignore")))
+				except OSError:
+					return set()
+
+			noncore_names = set()
+			for d in noncore_rtl:
+				for f in os.listdir(d) if os.path.isdir(d) else []:
+					if f.endswith(".sv"):
+						noncore_names |= _decls(os.path.join(d, f))
+
+			if os.path.isdir(core_rtl):
+				for f in sorted(os.listdir(core_rtl)):
+					if not f.endswith(".sv"):
+						continue
+					names = _decls(os.path.join(core_rtl, f))
+					# Drop only if the file declares something AND every declared
+					# top-level name is already provided by a non-core unit.
+					if names and names <= noncore_names:
+						exclude_patterns.append(
+							re.escape(os.path.join(core_rtl, f)) + r"$")
 
 		flist_template = Sim_Flist_Template(
 				defines=defines,
