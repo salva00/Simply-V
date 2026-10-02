@@ -78,6 +78,7 @@ Standalone benches on the in-tree crossbar RTL (no firmware):
     make -C hw/xilinx sim_verilator_xbar XBAR_DW=64        # simplyv_axi_xbar, 64-bit
     make -C hw/xilinx sim_verilator_xbar AXI4PC=1          # + ARM AXI4 protocol checker (needs XILINX_VIVADO)
     make -C hw/xilinx sim_verilator_axilite_xbar           # simplyv_axilite_xbar
+    make -C hw/xilinx sim_verilator_mx_bridge              # MX memory-protocol bridge
     make -C hw/xilinx sim_xsim_xbar                        # same AXI4 crossbar, xsim + Xilinx AXI VIP (manual, needs Vivado)
     make -C hw/xilinx xbar_synth_check                     # Vivado out-of-context RTL elaboration (no project, no IP)
     make -C hw/xilinx simplyv_elab_check                   # Vivado RTL elaboration of simplyv with the Xilinx IPs (needs make ips)
@@ -88,7 +89,7 @@ Standalone benches on the in-tree crossbar RTL (no firmware):
 
 Runs the config flow unit tests (pytest), the Verilator `smoke` (which regenerates the sim
 config) and the elaboration gate, then the crossbar benches
-(`sim_verilator_xbar` 32/64-bit, `sim_verilator_axilite_xbar`;
+(`sim_verilator_xbar` 32/64-bit, `sim_verilator_axilite_xbar`, `sim_verilator_mx_bridge`;
 with `XILINX_VIVADO` set, also `sim_verilator_xbar` 32/64-bit and
 `sim_verilator_axilite_xbar` with `AXI4PC=1`), then the Verilator backend across all cores:
 `ibex` and the 64-bit cores (`cv64a6`, `cv64a6_ara`) over the full embedded

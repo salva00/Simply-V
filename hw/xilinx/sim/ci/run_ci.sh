@@ -30,6 +30,7 @@ if [ -n "${XILINX_VIVADO:-}" ]; then
   make -C hw/xilinx sim_verilator_xbar XBAR_DW=64 AXI4PC=1
   make -C hw/xilinx sim_verilator_axilite_xbar AXI4PC=1
 fi
+make -C hw/xilinx sim_verilator_mx_bridge
 
 # Explicit core per run (CI no longer depends on the user's config_system.csv). ibex and the
 # 64-bit cores assert the full embedded suite; the rv32 non-default cores assert hello_world.

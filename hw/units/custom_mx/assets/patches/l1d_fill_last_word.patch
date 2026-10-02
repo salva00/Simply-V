@@ -1,0 +1,11 @@
+--- a/L1D.v
++++ b/L1D.v
+@@ -339,7 +339,7 @@
+                                   (state_r == `L1D_STATE_READY) & (read_from_mem_3_w) & ~mx_dma_active_i  ? `L1D_STATE_READ_MEM_NCA :
+                                   (state_r == `L1D_STATE_READY) & (trigger_replacement_w) & ~mx_dma_active_i   ? `L1D_STATE_WRITE_MEM :
+                                   (state_r == `L1D_STATE_READY)                                           ? `L1D_STATE_READY :
+-                                  (state_r == `L1D_STATE_READ_MEM) & (counter_r == 4'd15)                 ? `L1D_STATE_READY :
++                                  (state_r == `L1D_STATE_READ_MEM) & (counter_r == 4'd15) & mem_block_fill_w ? `L1D_STATE_READY :
+                                   (state_r == `L1D_STATE_READ_MEM)                                        ? `L1D_STATE_READ_MEM :
+                                   (state_r == `L1D_STATE_WRITE_MEM) & (counter_r == 4'd15)                ? `L1D_STATE_READY :
+                                   (state_r == `L1D_STATE_WRITE_MEM)                                       ? `L1D_STATE_WRITE_MEM :

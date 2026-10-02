@@ -288,6 +288,18 @@ sim_verilator_embedded: ${TEST_HEX}
 
 .PHONY: sim_verilator_embedded
 
+# MX memory-protocol bridge unit bench (self-checking, no firmware)
+VL_MXB_DIR := ${XILINX_SIM_BUILD_DIR}/verilator/mx_bridge
+sim_verilator_mx_bridge:
+	mkdir -p ${VL_MXB_DIR}
+	${VERILATOR} --binary --timing -j 0 -Wno-fatal -Mdir ${VL_MXB_DIR} \
+		--top-module tb_mx_mem_bridge \
+		${SIMPLYV_ROOT_DIR}/hw/units/custom_mx/mx_mem_bridge.sv \
+		${SIMPLYV_ROOT_DIR}/hw/units/custom_mx/sim/tb_mx_mem_bridge.sv
+	${VL_MXB_DIR}/Vtb_mx_mem_bridge | tee ${VL_MXB_DIR}/run.log
+	grep -q PASS ${VL_MXB_DIR}/run.log && ! grep -q FAIL ${VL_MXB_DIR}/run.log
+.PHONY: sim_verilator_mx_bridge
+
 # Standalone crossbar bench (self-checking, no firmware). XBAR_DW=64 for the 64-bit
 # data path; AXI4PC=1 binds the ARM AXI4 protocol checker shipped with Vivado.
 # XBAR_ATOMICS enables the atomics_tests in the TB, exercising the

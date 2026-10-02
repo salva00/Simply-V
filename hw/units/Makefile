@@ -5,8 +5,9 @@ endif
 
 SHELL := /bin/bash
 
-# All custom IPs directories, excluding custom_template
-IP_RTL_LIST = $(filter-out custom_template, $(shell basename --multiple ${HW_UNITS_ROOT}/custom_*) )
+# All custom IPs directories, excluding custom_template. custom_mx (simulation-only
+# core) is fetched only with MX=1.
+IP_RTL_LIST = $(filter-out custom_template $(if $(filter 1,${MX}),,custom_mx), $(shell basename --multiple ${HW_UNITS_ROOT}/custom_*) )
 
 all: units
 
