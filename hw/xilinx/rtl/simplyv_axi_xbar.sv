@@ -382,9 +382,10 @@ module simplyv_axi_xbar #(
         assign m_axi_arregion[j] = '0;
         if (ATOMICS_MASK[j]) begin : atomics
             simplyv_axi_atomics #(
-                .DATA_WIDTH ( DATA_WIDTH ),
-                .ADDR_WIDTH ( ADDR_WIDTH ),
-                .ID_WIDTH   ( ID_WIDTH   )
+                .DATA_WIDTH  ( DATA_WIDTH ),
+                .ADDR_WIDTH  ( ADDR_WIDTH ),
+                .ID_WIDTH    ( ID_WIDTH   ),
+                .MAX_PENDING ( NUM_SI     )
             ) atomics_u (
                 .aclk, .aresetn,
                 .s_axi_awid(mi_awid[j]), .s_axi_awaddr(mi_awaddr[j]), .s_axi_awlen(mi_awlen[j]), .s_axi_awsize(mi_awsize[j]),
