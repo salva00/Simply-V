@@ -37,3 +37,16 @@ sim_verilator_xbar:
 	${VL_XBAR_DIR}/Vxbar_tb | tee ${VL_XBAR_DIR}/run.log
 	grep -q '\[XBAR\] PASS' ${VL_XBAR_DIR}/run.log && ! grep -q FAIL ${VL_XBAR_DIR}/run.log
 .PHONY: sim_verilator_xbar
+
+# Standalone AXI-Lite crossbar bench (self-checking, no firmware).
+# AXI4PC=1 binds the ARM AXI4 protocol checker shipped with Vivado.
+VL_LITE_XBAR_DIR := ${XILINX_SIM_BUILD_DIR}/verilator/axilite_xbar
+LITE_XBAR_RTL    := ${XILINX_ROOT}/rtl/simplyv_axilite_xbar.sv
+sim_verilator_axilite_xbar:
+	mkdir -p ${VL_LITE_XBAR_DIR}
+	${VERILATOR} --binary --timing --assert -j 0 -Wno-fatal -Mdir ${VL_LITE_XBAR_DIR} \
+		--top-module axilite_xbar_tb ${XBAR_PC_SRC} \
+		${LITE_XBAR_RTL} ${XILINX_SIM_ROOT}/verilator/tb/axilite_xbar_tb.sv
+	${VL_LITE_XBAR_DIR}/Vaxilite_xbar_tb | tee ${VL_LITE_XBAR_DIR}/run.log
+	grep -q '\[AXILITE_XBAR\] PASS' ${VL_LITE_XBAR_DIR}/run.log && ! grep -q FAIL ${VL_LITE_XBAR_DIR}/run.log
+.PHONY: sim_verilator_axilite_xbar
