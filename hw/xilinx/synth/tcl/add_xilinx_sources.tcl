@@ -18,6 +18,12 @@ set src_file_list [ list \
     $::env(XILINX_ROOT)/rtl/wrappers/plic_wrapper.sv                              \
     $::env(XILINX_ROOT)/rtl/wrappers/clint_wrapper.sv                             \
     $::env(XILINX_ROOT)/rtl/wrappers/uart_wrapper.sv                              \
+    $::env(XILINX_ROOT)/rtl/simplyv_axi_err_slv.sv                                \
+    $::env(XILINX_ROOT)/rtl/simplyv_axi_atomics.sv                                \
+    $::env(XILINX_ROOT)/rtl/simplyv_axi_xbar.sv                                   \
+    $::env(XILINX_ROOT)/rtl/simplyv_axilite_xbar.sv                               \
+    $::env(XILINX_ROOT)/rtl/wrappers/mbus_crossbar_wrapper.sv                     \
+    $::env(XILINX_ROOT)/rtl/wrappers/pbus_crossbar_wrapper.sv                     \
     $::env(XILINX_ROOT)/rtl/hbus.sv                                               \
     $::env(XILINX_ROOT)/rtl/pbus.sv                                               \
     $::env(XILINX_ROOT)/rtl/rv_socket.sv                                          \

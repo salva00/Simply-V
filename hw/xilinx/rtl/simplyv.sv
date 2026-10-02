@@ -195,7 +195,7 @@ module simplyv (
     );
 
     // MBUS Axi Crossbar
-    xlnx_mbus_crossbar mbus_xbar_u (
+    mbus_crossbar_wrapper mbus_xbar_u (
         .aclk           ( MBUS_clk                  ), // input
         .aresetn        ( MBUS_rstn                 ), // input
         .s_axi_awid     ( MBUS_masters_axi_awid     ), // input
