@@ -277,6 +277,19 @@ sim_verilator_axilite_xbar:
 	grep -q '\[AXILITE_XBAR\] PASS' ${VL_LITE_XBAR_DIR}/run.log && ! grep -q FAIL ${VL_LITE_XBAR_DIR}/run.log
 .PHONY: sim_verilator_axilite_xbar
 
+# Crossbar bench on xsim with the Xilinx AXI VIP (needs XILINX_VIVADO). Manual: not in CI.
+# AXI VIP library: the precompiled one shipped with the installed Vivado.
+XS_XBAR_DIR    := ${XILINX_SIM_BUILD_DIR}/xsim/xbar
+XS_AXI_VIP_LIB ?= $(notdir $(lastword $(sort $(wildcard ${XILINX_VIVADO}/data/xsim/ip/axi_vip_v*))))
+sim_xsim_xbar:
+	test -n "$${XILINX_VIVADO}" || { echo "XILINX_VIVADO not set"; exit 1; }
+	mkdir -p ${XS_XBAR_DIR}
+	cd ${XS_XBAR_DIR} && ${XVLOG} -sv -L xilinx_vip -L ${XS_AXI_VIP_LIB} ${XBAR_RTL} ${XILINX_SIM_ROOT}/xsim/tb/xbar_vip_tb.sv
+	cd ${XS_XBAR_DIR} && ${XELAB} -L xilinx_vip -L ${XS_AXI_VIP_LIB} --snapshot xbar_vip xbar_vip_tb -timescale 1ns/1ps
+	cd ${XS_XBAR_DIR} && ${XSIM} xbar_vip -R --log ${XS_XBAR_DIR}/xbar_vip.log
+	grep -q '\[XBAR-VIP\] PASS' ${XS_XBAR_DIR}/xbar_vip.log && ! grep -qE 'AXI4_ERR|AXI4_REC|Fatal' ${XS_XBAR_DIR}/xbar_vip.log
+.PHONY: sim_xsim_xbar
+
 sim_clean:
 	rm -rf ${XILINX_SIM_BUILD_DIR}
 
