@@ -1,0 +1,127 @@
+# Author: Salvatore Bramante <salvatore.bramante@yahoo.it>
+# Description: tests for the sim templates (run from config/simply_config: python -m pytest tests/)
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from templates.sim_template import Sim_Defines_Template
+from buses.nonleafbus import NonLeafBus
+from general.addr_range import Addr_Ranges
+
+
+class FakeRange:
+    def __init__(self, base, width):
+        self.RANGE_BASE_ADDR = base
+        self.RANGE_ADDR_WIDTH = width
+
+
+class FakeBus:
+    FULL_NAME = "MBUS"
+    ADDR_WIDTH = 32
+    DATA_WIDTH = 32
+    ID_WIDTH = 4
+    NUM_SI = 2
+    NUM_MI = 2
+    MASTER_NAMES = ["CORE", "DMA"]
+
+    def get_ordered_children_ranges(self):
+        return [[FakeRange(0x0, 16)], [FakeRange(0x20000, 17)]]
+
+    def get_ordered_children_names(self):
+        return ["BRAM", "PBUS"]
+
+
+class FakeSystem:
+    CORE_SELECTOR = "CORE_IBEX"
+    XLEN = 32
+    XBAR_IMPL = "XILINX"
+
+    def __init__(self):
+        self.buses = [FakeBus()]
+        class _M:
+            CLOCK_FREQUENCY = 100
+            CLOCK_DOMAIN = "MBUS_100"
+            def get_nodes(self):
+                return []
+        self.mbus = _M()
+
+
+def test_defines_contains_profile_and_bus_macros():
+    out = Sim_Defines_Template(FakeSystem(), "embedded").get_params()["defines"]
+    assert "`define EMBEDDED 1" in out
+    assert "`define MBUS_DATA_WIDTH 32" in out
+    assert "`define MBUS_NUM_SI 2" in out
+    assert "`define CORE_SELECTOR CORE_IBEX" in out
+
+
+def test_define_pairs_mirror_svh_defines():
+    # The flist generator must consume the SAME define list as the .svh
+    # emission (no duplicated define logic) via get_define_pairs()
+    t = Sim_Defines_Template(FakeSystem(), "embedded")
+    pairs = t.get_define_pairs()
+    assert "EMBEDDED=1" in pairs
+    assert "MBUS_NUM_SI=2" in pairs
+    assert "CORE_SELECTOR=CORE_IBEX" in pairs
+    assert "XBAR_IMPL=XBAR_XILINX" in pairs
+    assert "MAIN_CLOCK_DOMAIN=MAIN_CLOCK_DOMAIN" in pairs
+
+
+def test_flist_orders_packages_before_modules(tmp_path):
+    from templates.sim_template import Sim_Flist_Template
+    # two fake rtl files: a package and a module, written under tmp_path
+    rtl = tmp_path / "rtl"; rtl.mkdir()
+    (rtl / "b_mod.sv").write_text("module b_mod; endmodule\n")
+    (rtl / "a_pkg.sv").write_text("package a_pkg; endpackage\n")
+    t = Sim_Flist_Template(defines=["EMBEDDED=1"], incdirs=[str(rtl)],
+                           prelude_files=[], rtl_roots=[str(rtl)],
+                           exclude_patterns=[], extra_files=[])
+    body = t.get_params()["body"]
+    assert body.index("a_pkg.sv") < body.index("b_mod.sv")
+    assert "+define+EMBEDDED=1" in body
+    assert f"+incdir+{rtl}" in body
+
+
+def test_flist_tolerates_missing_roots(tmp_path):
+    # the generator must not crash on missing/empty rtl_roots
+    from templates.sim_template import Sim_Flist_Template
+    t = Sim_Flist_Template(defines=[], incdirs=[],
+                           prelude_files=[], rtl_roots=[str(tmp_path / "nope")],
+                           exclude_patterns=[], extra_files=[])
+    assert t.get_params()["body"] == ""
+
+
+class StubChild:
+    # Minimal stand-in for a Peripheral/Bus child: only the two attributes
+    # read by get_ordered_children_names/get_ordered_children_ranges,
+    # using a REAL Addr_Ranges so the real sort key (__lt__ on base addr) applies
+    def __init__(self, full_name, base, width):
+        self.FULL_NAME = full_name
+        self.assigned_addr_ranges = Addr_Ranges(full_name, [base], [width])
+
+
+def test_real_nonleafbus_names_align_with_ranges():
+    # Exercise the REAL NonLeafBus methods (not fakes). The full constructor
+    # needs CSV-driven dicts and singletons, so build a skeleton and set only
+    # the attributes those two methods actually read.
+    bus = object.__new__(NonLeafBus)
+    # Children deliberately listed OUT of base-address order so the test
+    # fails if either method's sorting desyncs
+    bus._children_peripherals = [
+        StubChild("BRAM", 0x40000, 16),
+        StubChild("UART", 0x0, 12),
+    ]
+    bus._children_buses = [StubChild("PBUS", 0x20000, 17)]
+    bus.LOOPBACK = True
+    bus.loopback_ranges = Addr_Ranges("MBUS", [0x10000], [16])
+
+    names = bus.get_ordered_children_names()
+    ranges = bus.get_ordered_children_ranges()
+
+    assert len(names) == len(ranges)
+    # Expected ascending base-address order:
+    # UART (0x0), LOOPBACK (0x10000), PBUS (0x20000), BRAM (0x40000)
+    assert names == ["UART", "LOOPBACK", "PBUS", "BRAM"]
+    base_to_name = {0x0: "UART", 0x10000: "LOOPBACK",
+                    0x20000: "PBUS", 0x40000: "BRAM"}
+    for i, r in enumerate(ranges):
+        # name at i must correspond to the child whose range is at i
+        assert names[i] == base_to_name[r.get_base_addr()]
