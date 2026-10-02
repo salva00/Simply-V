@@ -6,7 +6,7 @@
 bitstream: ips
 	mkdir -p ${XILINX_PROJECT_REPORTS_DIR}
 	cd ${XILINX_PROJECT_BUILD_DIR}; \
-	${XILINX_VIVADO} -source ${XILINX_SYNTH_TCL_ROOT}/build_bitstream.tcl
+	${XILINX_VIVADO_RUN} -source ${XILINX_SYNTH_TCL_ROOT}/build_bitstream.tcl
 
 # Generate ips
 IP_NAMES ?= $(addprefix ips/, $(addsuffix .xci, ${IP_LIST}))
@@ -19,7 +19,7 @@ define build_ip
 	export IP_DIR=${IP_DIR};                                 \
 	export IP_NAME=$(patsubst ips/%.xci,%,$@);               \
 	export IP_PRJ_NAME=$${IP_NAME}_prj;                      \
-	${XILINX_VIVADO}                                         \
+	${XILINX_VIVADO_RUN}                                     \
 		-source ${XILINX_IPS_ROOT}/common/tcl/pre_config.tcl \
 		-source ${IP_DIR}/config.tcl                         \
 		-source ${XILINX_IPS_ROOT}/common/tcl/post_config.tcl
