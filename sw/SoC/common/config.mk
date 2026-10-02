@@ -83,3 +83,5 @@ MACRO_LIST =
 ifeq ($(SIMPLYV_PROFILE), embedded)
 	MACRO_LIST += -DIS_EMBEDDED
 endif
+# Extra macros for the caller (e.g. sim flow passes -DSIM_FAST). FPGA build: empty.
+MACRO_LIST += $(EXTRA_MACROS)
