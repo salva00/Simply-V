@@ -46,7 +46,7 @@ OUTPUT_DUMP := ${CONFIG_ROOT}/memory_map.csv
 ###  	CMD PARAMS      ###
 ###########################
 
-PYTHON ?= python3.10
+PYTHON ?= python3
 
 INPUT_ARGS = \
 	--system_csv ${INPUT_SYSTEM_CSV} \

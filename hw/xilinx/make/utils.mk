@@ -41,7 +41,7 @@ readback: readback_${SIMPLYV_PROFILE}
 
 # Embedded profile
 readback_embedded:
-	${XILINX_VIVADO_ENV} ${XILINX_VIVADO} \
+	${XILINX_VIVADO_ENV} ${XILINX_VIVADO_RUN} \
 	-source ${XILINX_SCRIPTS_UTILS_ROOT}/open_hw_manager.tcl \
 	-source ${XILINX_SCRIPTS_UTILS_ROOT}/readback_jtag2axi.tcl -tclargs ${OFFSET} ${NUM_BYTES}
 
@@ -53,7 +53,7 @@ readback_hpc:
 # Trigger a reset pulse on VIO probes
 vio_resetn:
 vio_%:
-	${XILINX_VIVADO_ENV} ${XILINX_VIVADO} \
+	${XILINX_VIVADO_ENV} ${XILINX_VIVADO_RUN} \
 		-source ${XILINX_SCRIPTS_UTILS_ROOT}/open_hw_manager.tcl \
 		-source ${XILINX_SCRIPTS_UTILS_ROOT}/vio_reset.tcl -tclargs $@
 
@@ -62,7 +62,7 @@ program_bitstream: program_bitstream_${SIMPLYV_PROFILE}
 
 # Program bitstream for embedded profile
 program_bitstream_embedded:
-	${XILINX_VIVADO} \
+	${XILINX_VIVADO_RUN} \
 		-source ${XILINX_SCRIPTS_UTILS_ROOT}/open_hw_manager.tcl \
 		-source ${XILINX_SCRIPTS_UTILS_ROOT}/program_bitstream.tcl
 
@@ -72,7 +72,7 @@ program_bitstream_hpc:
 #	TODO: This might be overkill, as only that one instance should cause problems
 	-killall virtual_uart
 #	Program
-	${XILINX_VIVADO} \
+	${XILINX_VIVADO_RUN} \
 		-source ${XILINX_SCRIPTS_UTILS_ROOT}/open_hw_manager.tcl \
 		-source ${XILINX_SCRIPTS_UTILS_ROOT}/program_bitstream.tcl
 #	Rescan PCIe device
