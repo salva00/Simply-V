@@ -394,7 +394,7 @@ module peripheral_bus #(
     );
 
     // AXI Lite crossbar
-    xlnx_pbus_crossbar pbus_xbar_u (
+    pbus_crossbar_wrapper pbus_xbar_u (
         .aclk           ( PBUS_clock_i  ),
         .aresetn        ( PBUS_reset_ni ),
 
