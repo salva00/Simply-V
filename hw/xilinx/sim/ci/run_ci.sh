@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Local CI: config flow unit tests, sim config regeneration, then the embedded
-# SoC on Verilator.
+# Author: Salvatore Bramante <salvatore.bramante@yahoo.it>
+# Description: local CI. Config flow unit tests, sim config regeneration, then the
+#              Verilator benches and the embedded SoC tests.
+# Vendor (Questa) is pending license — not in CI yet.
 set -euo pipefail
 
 : "${SIMPLYV_ROOT_DIR:?source settings.sh first}"
@@ -16,8 +18,10 @@ echo "== [CI] config flow unit tests =="
 echo "== [CI] config_sim regeneration =="
 make -C config all config_sim
 
-echo "== [CI] Verilator embedded hello_world =="
-make -C sw/SoC/examples/hello_world bin/hello_world.hex
-make -C hw/xilinx sim BACKEND=verilator TEST=embedded
+# Verilator runs: every embedded example. Fast enough for CI.
+for t in hello_world echo interrupts xlnx_cdma_examples; do
+  echo "== [CI] Verilator TEST=$t =="
+  make -C hw/xilinx sim BACKEND=verilator TEST="$t"
+done
 
 echo "[CI] ALL PASS"
