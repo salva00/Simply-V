@@ -20,6 +20,18 @@ ifeq (${BACKEND},questa)
 $(error BACKEND=questa is not available yet)
 endif
 
+# Per-core override (Verilator only). Empty CORE = use the user's
+# config_system.csv unchanged. When CORE is set, a temp per-core system CSV is
+# generated in build/ (the user CSV is never edited in place) and config_sim is
+# regenerated from it so the filelist/defines follow the selected core.
+# short name -> CORE_SELECTOR via a per-core var, no parser.
+CORE ?=
+CORE_SELECTOR_ibex     := CORE_IBEX
+CORE_SELECTOR_cv32e40p := CORE_CV32E40P
+CORE_SELECTOR_picorv32 := CORE_PICORV32
+# Config flow python; resolved from the user's active env (override: PYTHON=...).
+PYTHON ?= python3
+
 # Per-TEST program + golden. Each example builds to
 # sw/SoC/examples/<TEST>/bin/<TEST>.{hex,bin}; its golden lives in stimuli/golden/.
 # These derive every embedded sim path from ${TEST} (default hello_world via the
@@ -37,11 +49,35 @@ TEST_STIM_ARG := $(if $(wildcard ${TEST_STIM}),+STIMULUS=${TEST_STIM},)
 # The .hex (Verilog preload) is not built by the default `all` target: request it.
 # Shorter runs in sim: interrupts uses 1000x shorter periods.
 TEST_EXTRA_MACROS_interrupts := -DTIM0_COUNT_US=500u -DSLEEP_US=200u
-${TEST_HEX} ${TEST_BIN}:
-ifneq (${TEST_EXTRA_MACROS_${TEST}},)
+# picorv32 lacks standard CSRs AND compressed-ISA support. Build its firmware
+# without the interrupt-CSR setup (GAS --defsym -> startup.s .ifndef) and without the C
+# extension (C_EXTENSION=N -> rv32im, no RVC). The firmware is bare-metal (-nostdlib), so
+# C_EXTENSION=N covers the whole image. Other cores: unchanged.
+ifeq (${CORE},picorv32)
+TEST_EXTRA_ASFLAGS := -Wa,--defsym,CORE_PICORV32=1
+TEST_CORE_FW       := C_EXTENSION=N
+else
+TEST_EXTRA_ASFLAGS :=
+TEST_CORE_FW       :=
+endif
+# FORCE prereq so this rule runs even when the bin already exists (it has no
+# source prereqs); the conditional clean above decides whether to actually rebuild.
+${TEST_HEX} ${TEST_BIN}: FORCE
+ifneq (${TEST_EXTRA_MACROS_${TEST}}${TEST_EXTRA_ASFLAGS}${CORE},)
 	${MAKE} -C ${TEST_PROG_DIR} clean
 endif
-	${MAKE} -C ${TEST_PROG_DIR} bin/${TEST}.hex bin/${TEST}.bin PROGRAM_NAME=${TEST} EXTRA_MACROS="${TEST_EXTRA_MACROS_${TEST}}"
+ifeq (${CORE},picorv32)
+	# committed tinyio.a/libsimplyv.a are RVC; rebuild them no-RVC for picorv32
+	# (no-RVC libs are rv32im, runnable by every core). Not committed (build artifacts).
+	${MAKE} -C ${SIMPLYV_ROOT_DIR}/sw/SoC/lib/tinyio  clean
+	${MAKE} -C ${SIMPLYV_ROOT_DIR}/sw/SoC/lib/tinyio  C_EXTENSION=N
+	${MAKE} -C ${SIMPLYV_ROOT_DIR}/sw/SoC/lib/simplyv clean
+	${MAKE} -C ${SIMPLYV_ROOT_DIR}/sw/SoC/lib/simplyv C_EXTENSION=N
+endif
+	${MAKE} -C ${TEST_PROG_DIR} bin/${TEST}.hex bin/${TEST}.bin PROGRAM_NAME=${TEST} EXTRA_MACROS="${TEST_EXTRA_MACROS_${TEST}}" EXTRA_ASFLAGS=${TEST_EXTRA_ASFLAGS} ${TEST_CORE_FW}
+
+FORCE:
+.PHONY: FORCE
 
 VERILATOR ?= verilator
 XVLOG     ?= xvlog
@@ -49,7 +85,7 @@ XELAB     ?= xelab
 XSIM      ?= xsim
 
 sim:
-	${MAKE} sim_${BACKEND}_${TEST}
+	$(if ${CORE},${MAKE} sim_config_core &&) ${MAKE} sim_${BACKEND}_${TEST}
 
 # Embedded-cone dispatch aliases: the embedded examples all share one build flow
 # (sim_${BACKEND}_embedded), parametrized by ${TEST}. Map sim_${BACKEND}_<TEST>
@@ -135,6 +171,25 @@ sim_xsim_embedded: sim_export_embedded
 
 VL_EMB_DIR      := ${XILINX_SIM_BUILD_DIR}/verilator/embedded
 VL_EMB_FLIST    := ${XILINX_SIM_GENERATED_ROOT}/verilator_embedded.f
+
+# temp per-core system CSV so the user's config_system.csv is untouched.
+# Only built when CORE is non-empty; sim_config_core then regenerates config.mk and config_sim
+# from it (filelist/defines follow the selected core). picorv32 also needs
+# VIO_RESETN_DEFAULT=0 (sys_parser.py:40 rejects picorv32 with VIO_RESETN!=0).
+CORE_CSV         := ${XILINX_SIM_BUILD_DIR}/config_system_${CORE}.csv
+USER_SYSTEM_CSV  := ${CONFIG_ROOT}/configs/common/config_system.csv
+# picorv32 also needs VIO_RESETN_DEFAULT=0. The sed scripts hold commas, so the
+# conditional is done in shell (make's $(if) would split on them).
+sim_config_core:
+	mkdir -p ${XILINX_SIM_BUILD_DIR}
+	sed 's/^CORE_SELECTOR,.*/CORE_SELECTOR,${CORE_SELECTOR_${CORE}}/' \
+	    ${USER_SYSTEM_CSV} > ${CORE_CSV}
+	if [ "${CORE}" = picorv32 ]; then \
+	    sed -i 's/^VIO_RESETN_DEFAULT,.*/VIO_RESETN_DEFAULT,0/' ${CORE_CSV}; \
+	fi
+	${MAKE} -C ${CONFIG_ROOT} config_xilinx config_sim PYTHON=${PYTHON} INPUT_SYSTEM_CSV=${CORE_CSV}
+
+.PHONY: sim_config_core
 
 # UART bit period (cycles of the uartlite AXI clock), passed to both the SV sim
 # model (+define+) and the C++ TB (-CFLAGS -D).

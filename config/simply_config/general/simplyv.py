@@ -222,6 +222,20 @@ class SimplyV(metaclass=Singleton):
 			Path(dest).write_text(re.sub(r"\bcustom_top_wrapper\b", unit, text))
 			wrapper_files.append(dest)
 
+		# cv32e40p's FPU includes common_cells/{registers,assertions}.svh by subpath:
+		# sim copies use the bare name, shared with the other units
+		fpnew_fix_files, fpnew_fix_excludes = [], []
+		if core_unit == "custom_cv32e40p":
+			fpnew_fix_dir = os.path.join(siminc_dir, "fpnew_cc_fix")
+			os.makedirs(fpnew_fix_dir, exist_ok=True)
+			for fname in ("fpnew_cast_multi.sv", "fpnew_divsqrt_th_32.sv", "fpnew_fma_multi.sv",
+						  "fpnew_noncomp.sv", "fpnew_opgroup_multifmt_slice.sv"):
+				src = os.path.join(root, "hw", "units", core_unit, "rtl", fname)
+				dest = os.path.join(fpnew_fix_dir, fname)
+				Path(dest).write_text(Path(src).read_text().replace('include "common_cells/', 'include "'))
+				fpnew_fix_files.append(dest)
+				fpnew_fix_excludes.append(re.escape(src) + r"$")
+
 		xilinx_rtl = os.path.join(root, "hw", "xilinx", "rtl")
 		unit_rtl = {u: os.path.join(root, "hw", "units", u, "rtl") for u in cone_units}
 		incdirs = [unit_rtl[u] for u in cone_units[1:]] + [unit_rtl[core_unit], xilinx_rtl, headers_root]
@@ -239,14 +253,14 @@ class SimplyV(metaclass=Singleton):
 				r"hls_conv2d_wrapper\.sv$",			# HPC-only
 				r"ddr4_channel_wrapper\.sv$",		# HPC-only
 				r"virtual_uart\.sv$",				# HPC-only (ifdef HPC in uart_wrapper.sv)
-			]
+			] + fpnew_fix_excludes
 
 		flist_template = Sim_Flist_Template(
 				incdirs=incdirs,
 				prelude_files=[prelude_path],
 				rtl_roots=rtl_roots,
 				exclude_patterns=exclude_patterns,
-				extra_files=wrapper_files,
+				extra_files=wrapper_files + fpnew_fix_files,
 			)
 		flist_template.write_to_file(flist_path)
 
