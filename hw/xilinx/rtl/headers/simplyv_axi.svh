@@ -51,7 +51,7 @@ typedef logic [AXI_QOS_WIDTH    -1 : 0] axi_qos_t;
 typedef logic [AXI_VALID_WIDTH  -1 : 0] axi_valid_t;
 typedef logic [AXI_READY_WIDTH  -1 : 0] axi_ready_t;
 typedef logic [AXI_LAST_WIDTH   -1 : 0] axi_last_t;
-typedef logic [AXI_RESP_WIDTH   -1 : 0] axi_resp_t;
+typedef logic [AXI_RESP_WIDTH   -1 : 0] axi_resp_code_t;
 typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
 
 ////////////////////////////////////////
@@ -89,7 +89,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     axi_ready_t                   ``bus_name``_axi_wready;   \
     // B channel                                             \
     logic [ID_WIDTH-1 : 0]        ``bus_name``_axi_bid;      \
-    axi_resp_t                    ``bus_name``_axi_bresp;    \
+    axi_resp_code_t               ``bus_name``_axi_bresp;    \
     axi_valid_t                   ``bus_name``_axi_bvalid;   \
     axi_ready_t                   ``bus_name``_axi_bready;   \
     // AR channel                                            \
@@ -108,7 +108,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     // R channel                                             \
     logic [ID_WIDTH-1 : 0]        ``bus_name``_axi_rid;      \
     logic [DATA_WIDTH-1 : 0]      ``bus_name``_axi_rdata;    \
-    axi_resp_t                    ``bus_name``_axi_rresp;    \
+    axi_resp_code_t               ``bus_name``_axi_rresp;    \
     axi_last_t                    ``bus_name``_axi_rlast;    \
     axi_valid_t                   ``bus_name``_axi_rvalid;   \
     axi_ready_t                   ``bus_name``_axi_rready;
@@ -126,7 +126,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     axi_valid_t                     ``bus_name``_axilite_wvalid;    \
     axi_ready_t                     ``bus_name``_axilite_wready;    \
     // B channel                                \
-    axi_resp_t                      ``bus_name``_axilite_bresp;     \
+    axi_resp_code_t                 ``bus_name``_axilite_bresp;     \
     axi_valid_t                     ``bus_name``_axilite_bvalid;    \
     axi_ready_t                     ``bus_name``_axilite_bready;    \
     // AR channel                               \
@@ -136,7 +136,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     axi_ready_t                     ``bus_name``_axilite_arready;   \
     // R channel                                \
     logic [DATA_WIDTH-1 : 0]        ``bus_name``_axilite_rdata;     \
-    axi_resp_t                      ``bus_name``_axilite_rresp;     \
+    axi_resp_code_t                 ``bus_name``_axilite_rresp;     \
     axi_valid_t                     ``bus_name``_axilite_rvalid;    \
     axi_ready_t                     ``bus_name``_axilite_rready;
 
@@ -160,7 +160,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     axi_valid_t                     [``size`` -1 : 0] ``array_name``_axi_wvalid   ; \
     axi_ready_t                     [``size`` -1 : 0] ``array_name``_axi_wready   ; \
     logic [ID_WIDTH-1 : 0]          [``size`` -1 : 0] ``array_name``_axi_bid      ; \
-    axi_resp_t                      [``size`` -1 : 0] ``array_name``_axi_bresp    ; \
+    axi_resp_code_t                 [``size`` -1 : 0] ``array_name``_axi_bresp    ; \
     axi_valid_t                     [``size`` -1 : 0] ``array_name``_axi_bvalid   ; \
     axi_ready_t                     [``size`` -1 : 0] ``array_name``_axi_bready   ; \
     logic [ADDR_WIDTH-1 : 0]        [``size`` -1 : 0] ``array_name``_axi_araddr   ; \
@@ -177,7 +177,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     axi_region_t                    [``size`` -1 : 0] ``array_name``_axi_arregion ; \
     logic [ID_WIDTH-1 : 0]          [``size`` -1 : 0] ``array_name``_axi_rid      ; \
     logic [DATA_WIDTH-1 : 0]        [``size`` -1 : 0] ``array_name``_axi_rdata    ; \
-    axi_resp_t                      [``size`` -1 : 0] ``array_name``_axi_rresp    ; \
+    axi_resp_code_t                 [``size`` -1 : 0] ``array_name``_axi_rresp    ; \
     axi_last_t                      [``size`` -1 : 0] ``array_name``_axi_rlast    ; \
     axi_valid_t                     [``size`` -1 : 0] ``array_name``_axi_rvalid   ; \
     axi_ready_t                     [``size`` -1 : 0] ``array_name``_axi_rready   ;
@@ -192,7 +192,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     logic [(DATA_WIDTH/8)-1 : 0]    [``size`` -1 : 0] ``array_name``_axilite_wstrb    ; \
     axi_valid_t                     [``size`` -1 : 0] ``array_name``_axilite_wvalid   ; \
     axi_ready_t                     [``size`` -1 : 0] ``array_name``_axilite_wready   ; \
-    axi_resp_t                      [``size`` -1 : 0] ``array_name``_axilite_bresp    ; \
+    axi_resp_code_t                 [``size`` -1 : 0] ``array_name``_axilite_bresp    ; \
     axi_valid_t                     [``size`` -1 : 0] ``array_name``_axilite_bvalid   ; \
     axi_ready_t                     [``size`` -1 : 0] ``array_name``_axilite_bready   ; \
     logic [ADDR_WIDTH-1 : 0]        [``size`` -1 : 0] ``array_name``_axilite_araddr   ; \
@@ -200,7 +200,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     axi_valid_t                     [``size`` -1 : 0] ``array_name``_axilite_arvalid  ; \
     axi_ready_t                     [``size`` -1 : 0] ``array_name``_axilite_arready  ; \
     logic [DATA_WIDTH-1 : 0]        [``size`` -1 : 0] ``array_name``_axilite_rdata    ; \
-    axi_resp_t                      [``size`` -1 : 0] ``array_name``_axilite_rresp    ; \
+    axi_resp_code_t                 [``size`` -1 : 0] ``array_name``_axilite_rresp    ; \
     axi_valid_t                     [``size`` -1 : 0] ``array_name``_axilite_rvalid   ; \
     axi_ready_t                     [``size`` -1 : 0] ``array_name``_axilite_rready   ;
 
@@ -1186,7 +1186,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     input  axi_ready_t                  ``master_name``_axi_wready,   \
     // B channel                                      \
     input  logic [ID_WIDTH-1 : 0]       ``master_name``_axi_bid,      \
-    input  axi_resp_t                   ``master_name``_axi_bresp,    \
+    input  axi_resp_code_t              ``master_name``_axi_bresp,    \
     input  axi_valid_t                  ``master_name``_axi_bvalid,   \
     output axi_ready_t                  ``master_name``_axi_bready,   \
     // AR channel                                     \
@@ -1205,7 +1205,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     // R channel                                      \
     input  logic [ID_WIDTH-1 : 0]       ``master_name``_axi_rid,      \
     input  logic [DATA_WIDTH-1 : 0]     ``master_name``_axi_rdata,    \
-    input  axi_resp_t                   ``master_name``_axi_rresp,    \
+    input  axi_resp_code_t              ``master_name``_axi_rresp,    \
     input  axi_last_t                   ``master_name``_axi_rlast,    \
     input  axi_valid_t                  ``master_name``_axi_rvalid,   \
     output axi_ready_t                  ``master_name``_axi_rready
@@ -1233,7 +1233,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
   output axi_ready_t                    ``slave_name``_axi_wready,   \
   // B channel                                     \
   output logic [ID_WIDTH-1 : 0]         ``slave_name``_axi_bid,      \
-  output axi_resp_t                     ``slave_name``_axi_bresp,    \
+  output axi_resp_code_t                ``slave_name``_axi_bresp,    \
   output axi_valid_t                    ``slave_name``_axi_bvalid,   \
   input  axi_ready_t                    ``slave_name``_axi_bready,   \
   // AR channel                                    \
@@ -1252,7 +1252,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
   // R channel                                     \
   output logic [ID_WIDTH-1 : 0]         ``slave_name``_axi_rid,      \
   output logic [DATA_WIDTH-1 : 0]       ``slave_name``_axi_rdata,    \
-  output axi_resp_t                     ``slave_name``_axi_rresp,    \
+  output axi_resp_code_t                ``slave_name``_axi_rresp,    \
   output axi_last_t                     ``slave_name``_axi_rlast,    \
   output axi_valid_t                    ``slave_name``_axi_rvalid,   \
   input  axi_ready_t                    ``slave_name``_axi_rready
@@ -1270,7 +1270,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     output axi_valid_t                  ``master_name``_axilite_wvalid,   \
     input  axi_ready_t                  ``master_name``_axilite_wready,   \
     // B channel                                         \
-    input  axi_resp_t                   ``master_name``_axilite_bresp,    \
+    input  axi_resp_code_t              ``master_name``_axilite_bresp,    \
     input  axi_valid_t                  ``master_name``_axilite_bvalid,   \
     output axi_ready_t                  ``master_name``_axilite_bready,   \
     // AR channel                                        \
@@ -1280,7 +1280,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     input  axi_ready_t                  ``master_name``_axilite_arready,  \
     // R channel                                         \
     input  logic [DATA_WIDTH-1 : 0]     ``master_name``_axilite_rdata,    \
-    input  axi_resp_t                   ``master_name``_axilite_rresp,    \
+    input  axi_resp_code_t              ``master_name``_axilite_rresp,    \
     input  axi_valid_t                  ``master_name``_axilite_rvalid,   \
     output axi_ready_t                  ``master_name``_axilite_rready
 
@@ -1297,7 +1297,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     input  axi_valid_t                  ``slave_name``_axilite_wvalid,   \
     output axi_ready_t                  ``slave_name``_axilite_wready,   \
     // B channel                                         \
-    output axi_resp_t                   ``slave_name``_axilite_bresp,    \
+    output axi_resp_code_t              ``slave_name``_axilite_bresp,    \
     output axi_valid_t                  ``slave_name``_axilite_bvalid,   \
     input  axi_ready_t                  ``slave_name``_axilite_bready,   \
     // AR channel                                        \
@@ -1307,7 +1307,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     output axi_ready_t                  ``slave_name``_axilite_arready,  \
     // R channel                                         \
     output logic [DATA_WIDTH-1 : 0]     ``slave_name``_axilite_rdata,    \
-    output axi_resp_t                   ``slave_name``_axilite_rresp,    \
+    output axi_resp_code_t              ``slave_name``_axilite_rresp,    \
     output axi_valid_t                  ``slave_name``_axilite_rvalid,   \
     input  axi_ready_t                  ``slave_name``_axilite_rready
 
@@ -1325,7 +1325,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     input  axi_valid_t                  [``size`` -1 : 0]  ``slave_array_name``_axilite_wvalid,   \
     output axi_ready_t                  [``size`` -1 : 0]  ``slave_array_name``_axilite_wready,   \
     // B channel                                                                 \
-    output axi_resp_t                   [``size`` -1 : 0]  ``slave_array_name``_axilite_bresp,    \
+    output axi_resp_code_t              [``size`` -1 : 0]  ``slave_array_name``_axilite_bresp,    \
     output axi_valid_t                  [``size`` -1 : 0]  ``slave_array_name``_axilite_bvalid,   \
     input  axi_ready_t                  [``size`` -1 : 0]  ``slave_array_name``_axilite_bready,   \
     // AR channel                                                                \
@@ -1335,7 +1335,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     output axi_ready_t                  [``size`` -1 : 0]  ``slave_array_name``_axilite_arready,  \
     // R channel                                                                 \
     output logic [DATA_WIDTH-1 : 0]     [``size`` -1 : 0]  ``slave_array_name``_axilite_rdata,    \
-    output axi_resp_t                   [``size`` -1 : 0]  ``slave_array_name``_axilite_rresp,    \
+    output axi_resp_code_t              [``size`` -1 : 0]  ``slave_array_name``_axilite_rresp,    \
     output axi_valid_t                  [``size`` -1 : 0]  ``slave_array_name``_axilite_rvalid,   \
     input  axi_ready_t                  [``size`` -1 : 0]  ``slave_array_name``_axilite_rready
 
@@ -1353,7 +1353,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     output axi_valid_t                  [``size`` -1 : 0]  ``master_array_name``_axilite_wvalid,   \
     input  axi_ready_t                  [``size`` -1 : 0]  ``master_array_name``_axilite_wready,   \
     // B channel                                                                  \
-    input  axi_resp_t                   [``size`` -1 : 0]  ``master_array_name``_axilite_bresp,    \
+    input  axi_resp_code_t              [``size`` -1 : 0]  ``master_array_name``_axilite_bresp,    \
     input  axi_valid_t                  [``size`` -1 : 0]  ``master_array_name``_axilite_bvalid,   \
     output axi_ready_t                  [``size`` -1 : 0]  ``master_array_name``_axilite_bready,   \
     // AR channel                                                                 \
@@ -1363,7 +1363,7 @@ typedef logic [AXI_REGION_WIDTH -1 : 0] axi_region_t;
     input  axi_ready_t                  [``size`` -1 : 0]  ``master_array_name``_axilite_arready,  \
     // R channel                                                                  \
     input  logic [DATA_WIDTH-1 : 0]     [``size`` -1 : 0]  ``master_array_name``_axilite_rdata,    \
-    input  axi_resp_t                   [``size`` -1 : 0]  ``master_array_name``_axilite_rresp,    \
+    input  axi_resp_code_t              [``size`` -1 : 0]  ``master_array_name``_axilite_rresp,    \
     input  axi_valid_t                  [``size`` -1 : 0]  ``master_array_name``_axilite_rvalid,   \
     output axi_ready_t                  [``size`` -1 : 0]  ``master_array_name``_axilite_rready
 
