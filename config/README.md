@@ -36,6 +36,7 @@ The following table details the supported properties.
 | Name  | Description | Values
 |-|-|-|
 | CORE_SELECTOR         | Select target RV core       | CORE_PICORV32, CORE_CV32E40P, CORE_IBEX, CORE_MICROBLAZEV_RV32, CORE_DUAL_MICROBLAZEV_RV32, CORE_MICROBLAZEV_RV64, CORE_CV64A6, CORE_CV64A6_ARA
+| XBAR_IMPL             | Select the MBUS/PBUS crossbar implementation | XILINX (default, uses the Xilinx axi_crossbar IP), CUSTOM (in-tree RTL, `simplyv_axi_xbar`/`simplyv_axilite_xbar`)
 | VIO_RESETN_DEFAULT    | Select value for VIO resetn | [0,1]
 | XLEN                  | Defines Bus DATA_WIDTH, supported cores and Toolchain version | [32,64]
 | PHYSICAL_ADDR_WIDTH $^1$| Select the phyisical address width | (32..64)

@@ -23,7 +23,7 @@ Fine-grained documentation and insights to control the building flow, can be fou
    - [Xilinx FPGA](hw/xilinx/README.md): package IPs, build bitstream, program device and debug platform.
 4. [Software build](sw/README.md): build software for Simply-V.
    - [Run software](hw/xilinx/doc/PROGRAM_LOADING.md): additional doc for loading and running programs.
-5. [TODO152](https://github.com/HiSA-Team/Simply-V/issues/152) SoC-level Simulation:
+5. [SoC-level simulation](hw/xilinx/sim/README.md): Verilator and xsim flows.
       * Requires license and support for Xilinx IPs
       * Students can access a licensed host for simulator access
 

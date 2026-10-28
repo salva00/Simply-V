@@ -1,6 +1,6 @@
 # Description: Simulation targets — dual backend (Verilator + xsim).
 # Always invoke via the main Makefile (`make -C hw/xilinx ...`) so that
-# config.mk and environment.mk are included.
+# config.mk and environment.mk are included. See hw/xilinx/sim/README.md.
 
 # All sim paths derive from XILINX_ROOT — no extra env vars in settings.sh
 XILINX_SIM_ROOT           := ${XILINX_ROOT}/sim
