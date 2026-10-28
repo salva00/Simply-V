@@ -238,6 +238,8 @@ class SimplyV(metaclass=Singleton):
 
 		xilinx_rtl = os.path.join(root, "hw", "xilinx", "rtl")
 		unit_rtl = {u: os.path.join(root, "hw", "units", u, "rtl") for u in cone_units}
+		# Core unit incdir last: CVA6 vendors an incompatible assertions.svh that would
+		# shadow the common_cells one the other units include by the same bare name
 		incdirs = [unit_rtl[u] for u in cone_units[1:]] + [unit_rtl[core_unit], xilinx_rtl, headers_root]
 		rtl_roots = list(unit_rtl.values()) + [
 				xilinx_rtl,
@@ -254,6 +256,67 @@ class SimplyV(metaclass=Singleton):
 				r"ddr4_channel_wrapper\.sv$",		# HPC-only
 				r"virtual_uart\.sv$",				# HPC-only (ifdef HPC in uart_wrapper.sv)
 			] + fpnew_fix_excludes
+
+		# CVA6 (and Ara) vendor their SoC, FPGA-board and TB files flat into rtl/:
+		# unused here, and some reference undefined macros or duplicate peripherals.
+		if self.CORE_SELECTOR in ("CORE_CV64A6", "CORE_CV64A6_ARA"):
+			exclude_patterns += [
+					r"ariane_xilinx\.sv$",				# CVA6 FPGA board top
+					r"ariane_peripherals_xilinx\.sv$",	# CVA6 FPGA peripherals
+					r"fan_ctrl\.sv$",					# CVA6 FPGA fan controller
+					r"/ariane\.sv$",					# CVA6 SoC top (we use cva6 directly)
+					r"rvfi_tracer\.sv$",				# CVA6 TB tracer
+					r"SimDTM\.sv$", r"SimJTAG\.sv$",	# CVA6 TB DPI sim stubs
+					r"/uart\.sv$",						# CVA6 TB uart (we have our own)
+					r"/clint\.sv$",						# CVA6 clint (we use custom_clint)
+					r"axi_lite_interface\.sv$",			# only used by CVA6 clint
+					r"axi_intf\.sv$",					# CVA6 TB AXI interface
+				]
+
+			# Unreachable Ara SRAM/tech-cell alternates that do not lint under Verilator.
+			if self.CORE_SELECTOR == "CORE_CV64A6_ARA":
+				exclude_patterns += [
+						r"/SyncTpRam\.sv$",				# unused dual-port SRAM (bad pragma)
+						# Dead axi_mem_if BRAM-logger cluster (top = AxiBramLogger, 0
+						# instantiations) importing a non-vendored CfMath package.
+						r"/AxiBramLogger\.sv$",
+						r"/BramLogger\.sv$",
+						r"/BramDwc\.sv$",
+						r"/TdpBramArray\.sv$",
+						# xpm-based tc_sram variant: resolve tc_sram to the behavioral model.
+						r"/tc_sram_xilinx\.sv$",
+					]
+
+			# CVA6 vendors its own, pin-incompatible copy of the cells the SoC units
+			# also ship. Drop every core-unit file whose declared names all exist in
+			# a non-core unit, so shared names resolve to the SoC copy.
+			core_rtl = unit_rtl[core_unit]
+			noncore_rtl = [unit_rtl[u] for u in cone_units[1:]]
+			decl_re = re.compile(r"^\s*(?:module|package|interface)\s+(\w+)", re.M)
+
+			def _decls(path):
+				try:
+					return set(decl_re.findall(
+						Path(path).read_text(encoding="utf-8", errors="ignore")))
+				except OSError:
+					return set()
+
+			noncore_names = set()
+			for d in noncore_rtl:
+				for f in os.listdir(d) if os.path.isdir(d) else []:
+					if f.endswith(".sv"):
+						noncore_names |= _decls(os.path.join(d, f))
+
+			if os.path.isdir(core_rtl):
+				for f in sorted(os.listdir(core_rtl)):
+					if not f.endswith(".sv"):
+						continue
+					names = _decls(os.path.join(core_rtl, f))
+					# Drop only if the file declares something AND every declared
+					# top-level name is already provided by a non-core unit.
+					if names and names <= noncore_names:
+						exclude_patterns.append(
+							re.escape(os.path.join(core_rtl, f)) + r"$")
 
 		flist_template = Sim_Flist_Template(
 				incdirs=incdirs,

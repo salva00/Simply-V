@@ -18,10 +18,27 @@ echo "== [CI] config flow unit tests =="
 echo "== [CI] config_sim regeneration =="
 make -C config all config_sim
 
-# Verilator runs: every embedded example. Fast enough for CI.
+# Verilator runs: every embedded example on the default core (ibex).
+# Fast enough for CI.
 for t in hello_world echo interrupts xlnx_cdma_examples; do
   echo "== [CI] Verilator TEST=$t =="
   make -C hw/xilinx sim BACKEND=verilator TEST="$t"
+done
+
+# Explicit core per run. The 64-bit cores assert the full embedded suite; the rv32
+# non-default cores assert hello_world. The lib-XLEN hygiene in sim.mk makes
+# back-to-back core order safe.
+# cv64a6_ara's CDMA run is the slowest (~25-30 min CPU); no per-command timeout is
+# imposed, so it can't be false-failed.
+for c in cv32e40p picorv32 cv64a6 cv64a6_ara; do
+  case "$c" in
+    cv64a6|cv64a6_ara) tests="hello_world echo interrupts xlnx_cdma_examples" ;;
+    *)                 tests="hello_world" ;;
+  esac
+  for t in $tests; do
+    echo "== [CI] Verilator CORE=$c TEST=$t =="
+    make -C hw/xilinx sim BACKEND=verilator CORE="$c" TEST="$t"
+  done
 done
 
 echo "[CI] ALL PASS"

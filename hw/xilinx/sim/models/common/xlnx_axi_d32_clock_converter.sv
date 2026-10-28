@@ -1,5 +1,5 @@
 // Author: Salvatore Bramante <salvatore.bramante@yahoo.it>
-// Description: Simulation model of the Xilinx AXI4 32-bit clock converter.
+// Description: Simulation models of the Xilinx AXI4 32/64-bit clock converters.
 //              Both domains share one clock in simulation, so every channel
 //              passes straight through.
 
@@ -76,4 +76,23 @@ module xlnx_axi_d32_clock_converter #(
     assign s_axi_rlast    = m_axi_rlast;
     assign s_axi_rvalid   = m_axi_rvalid;
 
+endmodule
+
+module xlnx_axi_d64_clock_converter #(
+    parameter int unsigned LOCAL_DATA_WIDTH = 64,
+    parameter int unsigned LOCAL_ADDR_WIDTH = 32,
+    parameter int unsigned LOCAL_ID_WIDTH   = 5
+) (
+    input logic s_axi_aclk,
+    input logic s_axi_aresetn,
+    input logic m_axi_aclk,
+    input logic m_axi_aresetn,
+    `DEFINE_AXI_SLAVE_PORTS(s, LOCAL_DATA_WIDTH, LOCAL_ADDR_WIDTH, LOCAL_ID_WIDTH),
+    `DEFINE_AXI_MASTER_PORTS(m, LOCAL_DATA_WIDTH, LOCAL_ADDR_WIDTH, LOCAL_ID_WIDTH)
+);
+    xlnx_axi_d32_clock_converter #(
+        .LOCAL_DATA_WIDTH ( LOCAL_DATA_WIDTH ),
+        .LOCAL_ADDR_WIDTH ( LOCAL_ADDR_WIDTH ),
+        .LOCAL_ID_WIDTH   ( LOCAL_ID_WIDTH   )
+    ) u (.*);
 endmodule
